@@ -10,19 +10,13 @@ type Update struct {
 	// IDs start from a positive number and increse sequentially.
 	UpdateID uint64 `json:"update_id"`
 
+	// At most one of the following will be non-nil in a given Update.
+
 	// It is the new incoming message of any kind.
 	Message *Message `json:"message"`
 
 	// EditedMessage is the new version of a message that is known to the bot and was edited.
 	EditedMessage *Message `json:"edited_message"`
-
-	// ChannelPost is a new incoming channel post of any kind.
-	ChannelPost *Message `json:"channel_post"`
-
-	// EditedChannelPost is a new version of a channel post that is known to the bot and was edited.
-	EditedChannelPost Message `json:"edited_channel_post"`
-
-	// TODO: add the rest of the fields.
 }
 
 // A Message represents a message sent with telegram.
@@ -81,7 +75,7 @@ const (
 // A Chat is a telegram group, channel, or secret chat.
 type Chat struct {
 	// ID is a unique identifier for the chat.
-	ID int64 `json:"id"`
+	ID uint64 `json:"id"`
 
 	// Type is the type of chat.
 	Type ChatType `json:"type"`

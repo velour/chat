@@ -5,32 +5,52 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"sync"
+
+	"github.com/eaburns/pretty"
+	"github.com/velour/bridge/chat"
 )
 
-// A Client represents a client connection to the Telegram bot API.
+var _ chat.Client = &Client{}
+
+// Client implements the chat.Client interface using the Telegram bot API.
 type Client struct {
-	token   string
-	updates chan Update
-	error   chan error
-	me      User
+	token string
+	me    User
+	error chan error
+
+	sync.Mutex
+	channels map[string]*channel
 }
 
 // New returns a new Client using the given token.
 func New(token string) (*Client, error) {
 	c := &Client{
-		token:   token,
-		updates: make(chan Update, 100),
-		error:   make(chan error),
+		token:    token,
+		error:    make(chan error),
+		channels: make(map[string]*channel),
 	}
 	if err := rpc(c, "getMe", nil, &c.me); err != nil {
 		return nil, err
 	}
-	go c.run()
+	go poll(c)
 	return c, nil
 }
 
-func (c *Client) run() {
+func (c *Client) Join(name string) (chat.Channel, error) {
+	c.Lock()
+	defer c.Unlock()
+	var ch *channel
+	if ch = c.channels[name]; ch == nil {
+		ch = newChannel()
+		c.channels[name] = ch
+	}
+	return ch, nil
+}
+
+func poll(c *Client) {
 	req := struct {
 		Offset  uint64 `json:"offset"`
 		Timeout uint64 `json:"timeout"`
@@ -49,25 +69,41 @@ func (c *Client) run() {
 				panic("out of order updates")
 			}
 			req.Offset = u.UpdateID + 1
-			c.updates <- u
+			update(c, &u)
 		}
 	}
-	close(c.updates)
-	select {
-	case c.error <- err:
-	}
+	c.error <- err
 }
 
-// Updates returns the Client's Update channel.
-// On error, the Update channel is closed. Err() returns the error.
-func (c *Client) Updates() <-chan Update { return c.updates }
+func update(c *Client, u *Update) {
+	pretty.Print(*u)
+	fmt.Println("")
 
-// Err returns the first Update error encountered by the Client.
-// Note, Err blocks until an error occurs.
-func (c *Client) Err() error { return <-c.error }
+	var chat *Chat
+	switch {
+	case u.Message != nil:
+		chat = &u.Message.Chat
+	case u.EditedMessage != nil:
+		chat = &u.EditedMessage.Chat
+	}
+	if chat == nil {
+		return
+	}
+	if chat.Title == nil {
+		// Ignore messages not sent to supergroups, channels, or groups.
+		return
+	}
 
-// Me returns the bot's User information at the time the Client was created.
-func (c *Client) Me() User { return c.me }
+	c.Lock()
+	defer c.Unlock()
+
+	var ch *channel
+	if ch = c.channels[*chat.Title]; ch == nil {
+		ch = newChannel()
+		c.channels[*chat.Title] = ch
+	}
+	ch.updates <- u
+}
 
 func rpc(c *Client, method string, req interface{}, resp interface{}) error {
 	url := "https://api.telegram.org/bot" + c.token + "/" + method
