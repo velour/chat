@@ -5,11 +5,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"sync"
 
-	"github.com/eaburns/pretty"
 	"github.com/velour/bridge/chat"
 )
 
@@ -76,9 +74,6 @@ func poll(c *Client) {
 }
 
 func update(c *Client, u *Update) {
-	pretty.Print(*u)
-	fmt.Println("")
-
 	var chat *Chat
 	switch {
 	case u.Message != nil:
@@ -102,7 +97,11 @@ func update(c *Client, u *Update) {
 		ch = newChannel()
 		c.channels[*chat.Title] = ch
 	}
-	ch.updates <- u
+	select {
+	case ch.in <- []*Update{u}:
+	case us := <-ch.in:
+		ch.in <- append(us, u)
+	}
 }
 
 func rpc(c *Client, method string, req interface{}, resp interface{}) error {

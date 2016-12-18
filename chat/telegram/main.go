@@ -5,7 +5,9 @@ package main
 
 import (
 	"flag"
+	"fmt"
 
+	"github.com/eaburns/pretty"
 	"github.com/velour/bridge/chat/telegram"
 )
 
@@ -13,9 +15,22 @@ var token = flag.String("token", "", "The bot's token")
 
 func main() {
 	flag.Parse()
-	_, err := telegram.New(*token)
+	c, err := telegram.New(*token)
 	if err != nil {
 		panic(err)
 	}
-	select {}
+
+	ch, err := c.Join("velour-test")
+	if err != nil {
+		panic(err)
+	}
+
+	for {
+		ev, err := ch.Receive()
+		if err != nil {
+			panic(err)
+		}
+		pretty.Print(ev)
+		fmt.Println("")
+	}
 }
