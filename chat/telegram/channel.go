@@ -9,6 +9,8 @@ import (
 )
 
 type channel struct {
+	chat Chat
+
 	// In simulates an infinite buffered channel
 	// of Updates from the Client to this Channel.
 	// The Client publishes Updates without blocking to in.
@@ -20,10 +22,11 @@ type channel struct {
 	out chan *Update
 }
 
-func newChannel() *channel {
+func newChannel(chat Chat) *channel {
 	ch := &channel{
-		in:  make(chan []*Update, 1),
-		out: make(chan *Update),
+		chat: chat,
+		in:   make(chan []*Update, 1),
+		out:  make(chan *Update),
 	}
 	go func() {
 		for {

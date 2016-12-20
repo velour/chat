@@ -20,7 +20,7 @@ func main() {
 		panic(err)
 	}
 
-	ch, err := c.Join("velour-test")
+	ch, err := c.Join("-159332884")
 	if err != nil {
 		panic(err)
 	}
