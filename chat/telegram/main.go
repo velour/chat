@@ -25,7 +25,7 @@ func main() {
 		panic(err)
 	}
 
-	if _, err := ch.Send("Hello."); err != nil {
+	if _, err := ch.Send("Hello, World!"); err != nil {
 		panic(err)
 	}
 

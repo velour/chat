@@ -109,7 +109,19 @@ func (ch *channel) Send(text string) (chat.Message, error) {
 // Delete is a no-op for Telegram, as it's bot API doesn't support message deletion.
 func (ch *channel) Delete(chat.MessageID) error { return nil }
 
-func (ch *channel) Edit(chat.MessageID, string) (chat.MessageID, error) { panic("unimplemented") }
+func (ch *channel) Edit(messageID chat.MessageID, text string) (chat.MessageID, error) {
+	req := map[string]interface{}{
+		"chat_id":    ch.chat.ID,
+		"message_id": messageID,
+		"text":       text,
+		"parse_mode": "Markdown",
+	}
+	var resp Message
+	if err := rpc(ch.client, "editMessageText", req, &resp); err != nil {
+		return "", err
+	}
+	return chatMessageID(&resp), nil
+}
 
 func (ch *channel) Reply(replyTo chat.Message, text string) (chat.Message, error) {
 	return ch.sendMessage(&replyTo, text)
