@@ -9,6 +9,9 @@ import (
 )
 
 type channel struct {
+	client *Client
+	chat   Chat
+
 	// In simulates an infinite buffered channel
 	// of Updates from the Client to this Channel.
 	// The Client publishes Updates without blocking to in.
@@ -20,10 +23,12 @@ type channel struct {
 	out chan *Update
 }
 
-func newChannel() *channel {
+func newChannel(client *Client, chat Chat) *channel {
 	ch := &channel{
-		in:  make(chan []*Update, 1),
-		out: make(chan *Update),
+		client: client,
+		chat:   chat,
+		in:     make(chan []*Update, 1),
+		out:    make(chan *Update),
 	}
 	go func() {
 		for {
@@ -81,6 +86,47 @@ func (ch *channel) Receive() (interface{}, error) {
 	return nil, io.EOF
 }
 
+func (ch *channel) sendMessage(replyTo *chat.Message, text string) (chat.Message, error) {
+	req := map[string]interface{}{
+		"chat_id":    ch.chat.ID,
+		"text":       text,
+		"parse_mode": "Markdown",
+	}
+	if replyTo != nil {
+		req["reply_to_message_id"] = replyTo.ID
+	}
+	var resp Message
+	if err := rpc(ch.client, "sendMessage", req, &resp); err != nil {
+		return chat.Message{}, err
+	}
+	return chatMessage(&resp), nil
+}
+
+func (ch *channel) Send(text string) (chat.Message, error) {
+	return ch.sendMessage(nil, text)
+}
+
+// Delete is a no-op for Telegram, as it's bot API doesn't support message deletion.
+func (ch *channel) Delete(chat.MessageID) error { return nil }
+
+func (ch *channel) Edit(messageID chat.MessageID, text string) (chat.MessageID, error) {
+	req := map[string]interface{}{
+		"chat_id":    ch.chat.ID,
+		"message_id": messageID,
+		"text":       text,
+		"parse_mode": "Markdown",
+	}
+	var resp Message
+	if err := rpc(ch.client, "editMessageText", req, &resp); err != nil {
+		return "", err
+	}
+	return chatMessageID(&resp), nil
+}
+
+func (ch *channel) Reply(replyTo chat.Message, text string) (chat.Message, error) {
+	return ch.sendMessage(&replyTo, text)
+}
+
 func chatMessageID(m *Message) chat.MessageID {
 	return chat.MessageID(strconv.FormatUint(m.MessageID, 10))
 }
@@ -115,11 +161,3 @@ func chatUser(u *User) chat.User {
 		Name: name,
 	}
 }
-
-func (ch *channel) Send(text string) (chat.MessageID, error) { panic("unimplemented") }
-
-func (ch *channel) Delete(chat.MessageID) error { panic("unimplemented") }
-
-func (ch *channel) Edit(chat.MessageID, string) (chat.MessageID, error) { panic("unimplemented") }
-
-func (ch *channel) Reply(chat.Message, string) (chat.MessageID, error) { panic("unimplemented") }

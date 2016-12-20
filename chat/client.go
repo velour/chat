@@ -17,9 +17,8 @@ type Channel interface {
 	// Receive receives the next event from the Channel.
 	Receive() (interface{}, error)
 
-	// Send sends text to the Channel
-	// and returns the unique ID representing the message.
-	Send(text string) (MessageID, error)
+	// Send sends text to the Channel and returns the sent Message.
+	Send(text string) (Message, error)
 
 	// Delete deletes the a message.
 	//
@@ -32,14 +31,13 @@ type Channel interface {
 	// Implementations that do not support editing messages may treat this as a no-op.
 	Edit(id MessageID, newText string) (MessageID, error)
 
-	// Reply replies to a message with the given reply text,
-	// and returns the unique ID representing the reply message.
+	// Reply replies to a message and returns the replied Message.
 	//
 	// Implementations that do not support editing messages may treat this as a Send.
 	// As an enhancement, such an implementation could instead
 	// quote the user and text from the replyTo message,
 	// and send the reply text following the quote.
-	Reply(replyTo Message, text string) (MessageID, error)
+	Reply(replyTo Message, text string) (Message, error)
 }
 
 // A MessageID is a unique string representing a sent message.

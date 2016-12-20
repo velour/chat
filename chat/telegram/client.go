@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"sync"
 
 	"github.com/velour/bridge/chat"
@@ -20,7 +21,7 @@ type Client struct {
 	error chan error
 
 	sync.Mutex
-	channels map[string]*channel
+	channels map[int64]*channel
 }
 
 // New returns a new Client using the given token.
@@ -28,7 +29,7 @@ func New(token string) (*Client, error) {
 	c := &Client{
 		token:    token,
 		error:    make(chan error),
-		channels: make(map[string]*channel),
+		channels: make(map[int64]*channel),
 	}
 	if err := rpc(c, "getMe", nil, &c.me); err != nil {
 		return nil, err
@@ -37,13 +38,28 @@ func New(token string) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) Join(name string) (chat.Channel, error) {
+// Join returns a chat.Channel corresponding to
+// a Telegram group, supergroup, chat, or channel ID.
+// The ID string must be the base 10 chat ID number.
+func (c *Client) Join(idString string) (chat.Channel, error) {
+	var err error
+	var req struct {
+		ChatID int64 `json:"chat_id"`
+	}
+	if req.ChatID, err = strconv.ParseInt(idString, 10, 64); err != nil {
+		return nil, err
+	}
+	var chat Chat
+	if err := rpc(c, "getChat", req, &chat); err != nil {
+		return nil, err
+	}
+
 	c.Lock()
 	defer c.Unlock()
 	var ch *channel
-	if ch = c.channels[name]; ch == nil {
-		ch = newChannel()
-		c.channels[name] = ch
+	if ch = c.channels[chat.ID]; ch == nil {
+		ch = newChannel(c, chat)
+		c.channels[chat.ID] = ch
 	}
 	return ch, nil
 }
@@ -93,9 +109,9 @@ func update(c *Client, u *Update) {
 	defer c.Unlock()
 
 	var ch *channel
-	if ch = c.channels[*chat.Title]; ch == nil {
-		ch = newChannel()
-		c.channels[*chat.Title] = ch
+	if ch = c.channels[chat.ID]; ch == nil {
+		ch = newChannel(c, *chat)
+		c.channels[chat.ID] = ch
 	}
 	select {
 	case ch.in <- []*Update{u}:
