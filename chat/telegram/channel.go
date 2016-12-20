@@ -86,12 +86,11 @@ func chatMessageID(m *Message) chat.MessageID {
 }
 
 func messageText(m *Message) string {
-	//	var text string
-	//	if m.Text != nil {
-	//		text = *m.Text
-	//	}
-	//	return text
-	return m.Text
+	var text string
+	if m.Text != nil {
+		text = *m.Text
+	}
+	return text
 }
 
 // chatMessage assumes that m.From != nil.

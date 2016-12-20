@@ -70,7 +70,7 @@ type Message struct {
 	EditDate *uint64 `json:"edit_date"`
 
 	// Text is the text of the message, 0-4096 characters.
-	Text string `json:"text"`
+	Text *string `json:"text"`
 
 	Entities *[]map[string]interface{} `json:"entities"`
 	Audio    *map[string]interface{}   `json:"audio"`
