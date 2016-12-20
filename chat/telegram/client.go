@@ -58,7 +58,7 @@ func (c *Client) Join(idString string) (chat.Channel, error) {
 	defer c.Unlock()
 	var ch *channel
 	if ch = c.channels[chat.ID]; ch == nil {
-		ch = newChannel(chat)
+		ch = newChannel(c, chat)
 		c.channels[chat.ID] = ch
 	}
 	return ch, nil
@@ -110,7 +110,7 @@ func update(c *Client, u *Update) {
 
 	var ch *channel
 	if ch = c.channels[chat.ID]; ch == nil {
-		ch = newChannel(*chat)
+		ch = newChannel(c, *chat)
 		c.channels[chat.ID] = ch
 	}
 	select {

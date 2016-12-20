@@ -9,7 +9,8 @@ import (
 )
 
 type channel struct {
-	chat Chat
+	client *Client
+	chat   Chat
 
 	// In simulates an infinite buffered channel
 	// of Updates from the Client to this Channel.
@@ -22,11 +23,12 @@ type channel struct {
 	out chan *Update
 }
 
-func newChannel(chat Chat) *channel {
+func newChannel(client *Client, chat Chat) *channel {
 	ch := &channel{
-		chat: chat,
-		in:   make(chan []*Update, 1),
-		out:  make(chan *Update),
+		client: client,
+		chat:   chat,
+		in:     make(chan []*Update, 1),
+		out:    make(chan *Update),
 	}
 	go func() {
 		for {
@@ -84,6 +86,25 @@ func (ch *channel) Receive() (interface{}, error) {
 	return nil, io.EOF
 }
 
+func (ch *channel) Send(text string) (chat.MessageID, error) {
+	req := map[string]interface{}{
+		"chat_id":    ch.chat.ID,
+		"text":       text,
+		"parse_mode": "Markdown",
+	}
+	var resp Message
+	if err := rpc(ch.client, "sendMessage", req, &resp); err != nil {
+		return "", err
+	}
+	return chatMessageID(&resp), nil
+}
+
+func (ch *channel) Delete(chat.MessageID) error { panic("unimplemented") }
+
+func (ch *channel) Edit(chat.MessageID, string) (chat.MessageID, error) { panic("unimplemented") }
+
+func (ch *channel) Reply(chat.Message, string) (chat.MessageID, error) { panic("unimplemented") }
+
 func chatMessageID(m *Message) chat.MessageID {
 	return chat.MessageID(strconv.FormatUint(m.MessageID, 10))
 }
@@ -118,11 +139,3 @@ func chatUser(u *User) chat.User {
 		Name: name,
 	}
 }
-
-func (ch *channel) Send(text string) (chat.MessageID, error) { panic("unimplemented") }
-
-func (ch *channel) Delete(chat.MessageID) error { panic("unimplemented") }
-
-func (ch *channel) Edit(chat.MessageID, string) (chat.MessageID, error) { panic("unimplemented") }
-
-func (ch *channel) Reply(chat.Message, string) (chat.MessageID, error) { panic("unimplemented") }

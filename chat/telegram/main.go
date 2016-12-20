@@ -25,6 +25,12 @@ func main() {
 		panic(err)
 	}
 
+	id, err := ch.Send("Hello.")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("sent message ID", id)
+
 	for {
 		ev, err := ch.Receive()
 		if err != nil {
