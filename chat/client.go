@@ -3,6 +3,9 @@ package chat
 
 // A Client is a handle to a client connection to a chat service.
 type Client interface {
+	// Close closes the Client, reporting any pending errors encountered.
+	Close() error
+
 	// Join joins the client to a new Channel.
 	//
 	// For some chat services, like Slack and Telegram,

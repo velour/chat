@@ -19,6 +19,7 @@ type Client struct {
 	token string
 	me    User
 	error chan error
+	close chan bool
 
 	sync.Mutex
 	channels map[int64]*channel
@@ -29,6 +30,7 @@ func New(token string) (*Client, error) {
 	c := &Client{
 		token:    token,
 		error:    make(chan error),
+		close:    make(chan bool),
 		channels: make(map[int64]*channel),
 	}
 	if err := rpc(c, "getMe", nil, &c.me); err != nil {
@@ -64,6 +66,15 @@ func (c *Client) Join(idString string) (chat.Channel, error) {
 	return ch, nil
 }
 
+func (c *Client) Close() error {
+	close(c.close)
+	err := <-c.error
+	for _, ch := range c.channels {
+		close(ch.in)
+	}
+	return err
+}
+
 func poll(c *Client) {
 	req := struct {
 		Offset  uint64 `json:"offset"`
@@ -72,6 +83,7 @@ func poll(c *Client) {
 	req.Timeout = 1 // second
 
 	var err error
+loop:
 	for {
 		var updates []Update
 		if err = rpc(c, "getUpdates", req, &updates); err != nil {
@@ -84,6 +96,11 @@ func poll(c *Client) {
 			}
 			req.Offset = u.UpdateID + 1
 			update(c, &u)
+		}
+		select {
+		case <-c.close:
+			break loop
+		default:
 		}
 	}
 	c.error <- err

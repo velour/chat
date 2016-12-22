@@ -25,16 +25,19 @@ func main() {
 		panic(err)
 	}
 
-	if _, err := ch.Send("Hello, World!"); err != nil {
+	if _, err := ch.Send("Hello, World!\nWaiting for two events…"); err != nil {
 		panic(err)
 	}
 
-	for {
+	for i := 0; i < 2; i++ {
 		ev, err := ch.Receive()
 		if err != nil {
 			panic(err)
 		}
 		pretty.Print(ev)
 		fmt.Println("")
+	}
+	if err := c.Close(); err != nil {
+		panic(err)
 	}
 }
