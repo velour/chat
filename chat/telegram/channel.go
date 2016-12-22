@@ -13,8 +13,8 @@ type channel struct {
 	chat   Chat
 
 	// In simulates an infinite buffered channel
-	// of Updates from the Client to this Channel.
-	// The Client publishes Updates without blocking to in.
+	// of Updates from the Client to this channel.
+	// The Client publishes Updates without blocking.
 	in chan []*Update
 
 	// Out publishes Updates to the Receive method.
