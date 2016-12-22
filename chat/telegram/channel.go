@@ -31,11 +31,7 @@ func newChannel(client *Client, chat Chat) *channel {
 		out:    make(chan *Update),
 	}
 	go func() {
-		for {
-			us, ok := <-ch.in
-			if !ok {
-				break
-			}
+		for us := range ch.in {
 			for _, u := range us {
 				ch.out <- u
 			}
