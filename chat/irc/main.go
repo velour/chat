@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 
@@ -21,23 +22,24 @@ var (
 
 func main() {
 	flag.Parse()
-	c, err := irc.DialSSL(*server, *nick, *nick, *pass, false)
+	ctx := context.Background()
+	c, err := irc.DialSSL(ctx, *server, *nick, *nick, *pass, false)
 	if err != nil {
 		panic(err)
 	}
 
-	ch, err := c.Join(*channel)
+	ch, err := c.Join(ctx, *channel)
 	if err != nil {
 		panic(err)
 	}
 
-	if _, err := ch.Send("Hello,\nWorld!"); err != nil {
+	if _, err := ch.Send(ctx, "Hello,\nWorld!"); err != nil {
 		panic(err)
 	}
 
 loop:
 	for {
-		ev, err := ch.Receive()
+		ev, err := ch.Receive(ctx)
 		if err != nil {
 			panic(err)
 		}
@@ -50,7 +52,7 @@ loop:
 			}
 		}
 	}
-	if err := c.Close(); err != nil {
+	if err := c.Close(ctx); err != nil {
 		panic(err)
 	}
 }

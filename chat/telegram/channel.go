@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"io"
 	"strconv"
 	"strings"
@@ -41,48 +42,70 @@ func newChannel(client *Client, chat Chat) *channel {
 	return ch
 }
 
-func (ch *channel) Receive() (interface{}, error) {
-	for u := range ch.out {
-		switch {
-		case u.Message != nil && u.Message.From == nil:
-			// If From is nil, this is a message sent to a channel.
-			// chat.Message requires a user, so just skip these.
-			continue
-
-		case u.Message != nil && u.Message.ReplyToMessage != nil:
-			if u.Message.ReplyToMessage.From == nil {
-				// Replying to a channel send?
-				// chat.Message requires a user.
-				// Ignore the reply; just treat it as a normal message.
-				return chatMessage(u.Message), nil
+func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case u, ok := <-ch.out:
+			if !ok {
+				return nil, io.EOF
 			}
-			return chat.Reply{
-				ReplyTo: chatMessage(u.Message.ReplyToMessage),
-				Reply:   chatMessage(u.Message),
-			}, nil
-
-		case u.Message != nil && u.Message.NewChatMember != nil:
-			return chat.Join{Who: chatUser(u.Message.NewChatMember)}, nil
-
-		case u.Message != nil && u.Message.LeftChatMember != nil:
-			return chat.Leave{Who: chatUser(u.Message.LeftChatMember)}, nil
-
-		case u.Message != nil:
-			return chatMessage(u.Message), nil
-
-		case u.EditedMessage != nil:
-			id := chatMessageID(u.EditedMessage)
-			return chat.Edit{
-				ID:    id,
-				NewID: id,
-				Text:  messageText(u.EditedMessage),
-			}, nil
+			switch ev, err := chatEvent(u); {
+			case err != nil:
+				return nil, err
+			case ev == nil:
+				continue
+			default:
+				return ev, nil
+			}
 		}
 	}
-	return nil, io.EOF
 }
 
-func (ch *channel) sendMessage(replyTo *chat.Message, text string) (chat.Message, error) {
+// chatEvent returns the chat event corresponding to the update.
+// If the Update cannot be mapped, nil is returned with a nil error.
+// This signifies an Update that sholud be ignored.
+func chatEvent(u *Update) (interface{}, error) {
+	switch {
+	case u.Message != nil && u.Message.From == nil:
+		// If From is nil, this is a message sent to a channel.
+		// chat.Message requires a user, so just skip these.
+		return nil, nil
+
+	case u.Message != nil && u.Message.ReplyToMessage != nil:
+		if u.Message.ReplyToMessage.From == nil {
+			// Replying to a channel send?
+			// chat.Message requires a user.
+			// Ignore the reply; just treat it as a normal message.
+			return chatMessage(u.Message), nil
+		}
+		return chat.Reply{
+			ReplyTo: chatMessage(u.Message.ReplyToMessage),
+			Reply:   chatMessage(u.Message),
+		}, nil
+
+	case u.Message != nil && u.Message.NewChatMember != nil:
+		return chat.Join{Who: chatUser(u.Message.NewChatMember)}, nil
+
+	case u.Message != nil && u.Message.LeftChatMember != nil:
+		return chat.Leave{Who: chatUser(u.Message.LeftChatMember)}, nil
+
+	case u.Message != nil:
+		return chatMessage(u.Message), nil
+
+	case u.EditedMessage != nil:
+		id := chatMessageID(u.EditedMessage)
+		return chat.Edit{
+			ID:    id,
+			NewID: id,
+			Text:  messageText(u.EditedMessage),
+		}, nil
+	}
+	return nil, nil
+}
+
+func (ch *channel) sendMessage(ctx context.Context, replyTo *chat.Message, text string) (chat.Message, error) {
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
 		"text":       text,
@@ -92,20 +115,20 @@ func (ch *channel) sendMessage(replyTo *chat.Message, text string) (chat.Message
 		req["reply_to_message_id"] = replyTo.ID
 	}
 	var resp Message
-	if err := rpc(ch.client, "sendMessage", req, &resp); err != nil {
+	if err := rpc(ctx, ch.client, "sendMessage", req, &resp); err != nil {
 		return chat.Message{}, err
 	}
 	return chatMessage(&resp), nil
 }
 
-func (ch *channel) Send(text string) (chat.Message, error) {
-	return ch.sendMessage(nil, text)
+func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) {
+	return ch.sendMessage(ctx, nil, text)
 }
 
 // Delete is a no-op for Telegram, as it's bot API doesn't support message deletion.
-func (ch *channel) Delete(chat.MessageID) error { return nil }
+func (ch *channel) Delete(context.Context, chat.MessageID) error { return nil }
 
-func (ch *channel) Edit(messageID chat.MessageID, text string) (chat.MessageID, error) {
+func (ch *channel) Edit(ctx context.Context, messageID chat.MessageID, text string) (chat.MessageID, error) {
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
 		"message_id": messageID,
@@ -113,14 +136,14 @@ func (ch *channel) Edit(messageID chat.MessageID, text string) (chat.MessageID, 
 		"parse_mode": "Markdown",
 	}
 	var resp Message
-	if err := rpc(ch.client, "editMessageText", req, &resp); err != nil {
+	if err := rpc(ctx, ch.client, "editMessageText", req, &resp); err != nil {
 		return "", err
 	}
 	return chatMessageID(&resp), nil
 }
 
-func (ch *channel) Reply(replyTo chat.Message, text string) (chat.Message, error) {
-	return ch.sendMessage(&replyTo, text)
+func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
+	return ch.sendMessage(ctx, &replyTo, text)
 }
 
 func chatMessageID(m *Message) chat.MessageID {

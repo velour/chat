@@ -3,6 +3,7 @@ package telegram
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -25,15 +26,15 @@ type Client struct {
 	channels map[int64]*channel
 }
 
-// New returns a new Client using the given token.
-func New(token string) (*Client, error) {
+// Dial returns a new Client using the given token.
+func Dial(ctx context.Context, token string) (*Client, error) {
 	c := &Client{
 		token:    token,
 		error:    make(chan error),
 		close:    make(chan bool),
 		channels: make(map[int64]*channel),
 	}
-	if err := rpc(c, "getMe", nil, &c.me); err != nil {
+	if err := rpc(ctx, c, "getMe", nil, &c.me); err != nil {
 		return nil, err
 	}
 	go poll(c)
@@ -43,7 +44,7 @@ func New(token string) (*Client, error) {
 // Join returns a chat.Channel corresponding to
 // a Telegram group, supergroup, chat, or channel ID.
 // The ID string must be the base 10 chat ID number.
-func (c *Client) Join(idString string) (chat.Channel, error) {
+func (c *Client) Join(ctx context.Context, idString string) (chat.Channel, error) {
 	var err error
 	var req struct {
 		ChatID int64 `json:"chat_id"`
@@ -52,7 +53,7 @@ func (c *Client) Join(idString string) (chat.Channel, error) {
 		return nil, err
 	}
 	var chat Chat
-	if err := rpc(c, "getChat", req, &chat); err != nil {
+	if err := rpc(ctx, c, "getChat", req, &chat); err != nil {
 		return nil, err
 	}
 
@@ -66,7 +67,7 @@ func (c *Client) Join(idString string) (chat.Channel, error) {
 	return ch, nil
 }
 
-func (c *Client) Close() error {
+func (c *Client) Close(context.Context) error {
 	close(c.close)
 	err := <-c.error
 	for _, ch := range c.channels {
@@ -86,7 +87,7 @@ func poll(c *Client) {
 loop:
 	for {
 		var updates []Update
-		if err = rpc(c, "getUpdates", req, &updates); err != nil {
+		if err = rpc(context.Background(), c, "getUpdates", req, &updates); err != nil {
 			break
 		}
 		for _, u := range updates {
@@ -137,7 +138,18 @@ func update(c *Client, u *Update) {
 	}
 }
 
-func rpc(c *Client, method string, req interface{}, resp interface{}) error {
+func rpc(ctx context.Context, c *Client, method string, req interface{}, resp interface{}) error {
+	err := make(chan error)
+	go func() { err <- _rpc(c, method, req, resp) }()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-err:
+		return err
+	}
+}
+
+func _rpc(c *Client, method string, req interface{}, resp interface{}) error {
 	url := "https://api.telegram.org/bot" + c.token + "/" + method
 	var err error
 	var httpResp *http.Response
