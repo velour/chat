@@ -154,10 +154,6 @@ func rpc(c *Client, method string, req interface{}, resp interface{}) error {
 		return err
 	}
 	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
-		return errors.New(httpResp.Status)
-	}
-
 	result := struct {
 		OK          bool        `json:"ok"`
 		Description *string     `json:"description"`
@@ -166,12 +162,14 @@ func rpc(c *Client, method string, req interface{}, resp interface{}) error {
 	if resp != nil {
 		result.Result = resp
 	}
-	err = json.NewDecoder(httpResp.Body).Decode(&result)
-	if !result.OK {
-		if result.Description == nil {
-			return errors.New("request failed")
-		}
+	switch err = json.NewDecoder(httpResp.Body).Decode(&result); {
+	case !result.OK && result.Description != nil:
 		return errors.New(*result.Description)
+	case httpResp.StatusCode != http.StatusOK:
+		return errors.New(httpResp.Status)
+	case !result.OK:
+		return errors.New("request failed")
+	default:
+		return nil
 	}
-	return nil
 }
