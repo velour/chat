@@ -4,10 +4,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 
 	"github.com/eaburns/pretty"
+	"github.com/velour/bridge/chat"
 	"github.com/velour/bridge/chat/telegram"
 )
 
@@ -15,29 +17,37 @@ var token = flag.String("token", "", "The bot's token")
 
 func main() {
 	flag.Parse()
-	c, err := telegram.New(*token)
+	ctx := context.Background()
+	c, err := telegram.Dial(ctx, *token)
 	if err != nil {
 		panic(err)
 	}
 
-	ch, err := c.Join("-159332884")
+	ch, err := c.Join(ctx, "-159332884")
 	if err != nil {
 		panic(err)
 	}
 
-	if _, err := ch.Send("Hello, World!\nWaiting for two events…"); err != nil {
+	if _, err := ch.Send(ctx, "Hello, World!"); err != nil {
 		panic(err)
 	}
 
-	for i := 0; i < 2; i++ {
-		ev, err := ch.Receive()
+loop:
+	for {
+		ev, err := ch.Receive(ctx)
 		if err != nil {
 			panic(err)
 		}
 		pretty.Print(ev)
 		fmt.Println("")
+		switch m := ev.(type) {
+		case chat.Message:
+			if m.Text == "LEAVE" {
+				break loop
+			}
+		}
 	}
-	if err := c.Close(); err != nil {
+	if err := c.Close(ctx); err != nil {
 		panic(err)
 	}
 }

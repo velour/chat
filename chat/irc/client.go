@@ -2,13 +2,13 @@ package irc
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"errors"
 	"log"
 	"net"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/velour/bridge/chat"
 )
@@ -27,24 +27,30 @@ type Client struct {
 }
 
 // Dial connects to a remote IRC server.
-func Dial(server, nick, fullname, pass string) (*Client, error) {
-	c, err := net.Dial("tcp", server)
+func Dial(ctx context.Context, server, nick, fullname, pass string) (*Client, error) {
+	var dialer net.Dialer
+	c, err := dialer.DialContext(ctx, "tcp", server)
 	if err != nil {
 		return nil, err
 	}
-	return dial(c, nick, fullname, pass)
+	return dial(ctx, c, nick, fullname, pass)
 }
 
 // DialSSL connects to a remote IRC server using SSL.
-func DialSSL(server, nick, fullname, pass string, trust bool) (*Client, error) {
-	c, err := tls.Dial("tcp", server, &tls.Config{InsecureSkipVerify: trust})
+func DialSSL(ctx context.Context, server, nick, fullname, pass string, trust bool) (*Client, error) {
+	var dialer net.Dialer
+	if deadline, ok := ctx.Deadline(); ok {
+		dialer.Deadline = deadline
+	}
+	config := tls.Config{InsecureSkipVerify: trust}
+	c, err := tls.DialWithDialer(&dialer, "tcp", server, &config)
 	if err != nil {
 		return nil, err
 	}
-	return dial(c, nick, fullname, pass)
+	return dial(ctx, c, nick, fullname, pass)
 }
 
-func dial(conn net.Conn, nick, fullname, pass string) (*Client, error) {
+func dial(ctx context.Context, conn net.Conn, nick, fullname, pass string) (*Client, error) {
 	c := &Client{
 		conn:     conn,
 		in:       bufio.NewReader(conn),
@@ -52,27 +58,27 @@ func dial(conn net.Conn, nick, fullname, pass string) (*Client, error) {
 		nick:     nick,
 		channels: make(map[string]*channel),
 	}
-	if err := register(c, nick, fullname, pass); err != nil {
+	if err := register(ctx, c, nick, fullname, pass); err != nil {
 		return nil, err
 	}
 	go poll(c)
 	return c, nil
 }
 
-func register(c *Client, nick, fullname, pass string) error {
+func register(ctx context.Context, c *Client, nick, fullname, pass string) error {
 	if pass != "" {
-		if err := send(c, PASS, pass); err != nil {
+		if err := send(ctx, c, PASS, pass); err != nil {
 			return err
 		}
 	}
-	if err := send(c, NICK, nick); err != nil {
+	if err := send(ctx, c, NICK, nick); err != nil {
 		return err
 	}
-	if err := send(c, USER, nick, "0", "*", fullname); err != nil {
+	if err := send(ctx, c, USER, nick, "0", "*", fullname); err != nil {
 		return err
 	}
 	for {
-		msg, err := next(c)
+		msg, err := next(ctx, c)
 		if err != nil {
 			return err
 		}
@@ -96,8 +102,8 @@ func register(c *Client, nick, fullname, pass string) error {
 }
 
 // Close closes the connection.
-func (c *Client) Close() error {
-	send(c, QUIT)
+func (c *Client) Close(ctx context.Context) error {
+	send(ctx, c, QUIT)
 	closeErr := c.conn.Close()
 	pollErr := <-c.error
 	for _, ch := range c.channels {
@@ -109,30 +115,41 @@ func (c *Client) Close() error {
 	return pollErr
 }
 
-func send(c *Client, cmd string, args ...string) error {
-	msg := Message{Command: cmd, Arguments: args}
-	deadline := time.Now().Add(time.Minute)
-	if err := c.conn.SetWriteDeadline(deadline); err != nil {
-		return err
+func send(ctx context.Context, c *Client, cmd string, args ...string) error {
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := c.conn.SetWriteDeadline(deadline); err != nil {
+			return err
+		}
 	}
+	msg := Message{Command: cmd, Arguments: args}
 	bs := msg.Bytes()
 	if len(bs) > MaxBytes {
 		return TooLongError{Message: bs[:MaxBytes], NTrunc: len(bs) - MaxBytes}
 	}
-	_, err := c.conn.Write(bs)
-	return err
+	err := make(chan error)
+	go func() {
+		_, e := c.conn.Write(bs)
+		err <- e
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-err:
+		return err
+	}
+
 }
 
 // next returns the next message from the server.
 // It never returns a PING command;
 // the client responds to PINGs automatically.
-func next(c *Client) (Message, error) {
+func next(ctx context.Context, c *Client) (Message, error) {
 	for {
-		switch msg, err := read(c.in); {
+		switch msg, err := readWithContext(ctx, c.in); {
 		case err != nil:
 			return Message{}, err
 		case msg.Command == PING:
-			if err := send(c, PONG, msg.Arguments...); err != nil {
+			if err := send(ctx, c, PONG, msg.Arguments...); err != nil {
 				return Message{}, err
 			}
 		default:
@@ -146,7 +163,7 @@ func poll(c *Client) {
 loop:
 	for {
 		var msg Message
-		if msg, err = next(c); err != nil {
+		if msg, err = next(context.Background(), c); err != nil {
 			break loop
 		}
 		switch msg.Command {
@@ -317,7 +334,7 @@ func sendEventLocked(c *Client, channelName string, msg *Message, event interfac
 	}
 }
 
-func (c *Client) Join(channelName string) (chat.Channel, error) {
+func (c *Client) Join(ctx context.Context, channelName string) (chat.Channel, error) {
 	c.Lock()
 	defer c.Unlock()
 	if ch, ok := c.channels[channelName]; ok {
@@ -329,10 +346,10 @@ func (c *Client) Join(channelName string) (chat.Channel, error) {
 	// but it guarantees that everything on c.channels is JOINed.
 	// In otherwords, we should never receive a message
 	// for a channel that is not already on c.channels.
-	if err := send(c, JOIN, channelName); err != nil {
+	if err := send(ctx, c, JOIN, channelName); err != nil {
 		return nil, err
 	}
-	if err := send(c, WHO, channelName); err != nil {
+	if err := send(ctx, c, WHO, channelName); err != nil {
 		return nil, err
 	}
 	ch := newChannel(c, channelName)
