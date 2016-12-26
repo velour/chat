@@ -13,6 +13,11 @@ import (
 	"github.com/velour/bridge/chat"
 )
 
+const (
+	actionPrefix = "\x01ACTION"
+	actionSuffix = "\x01"
+)
+
 var _ chat.Client = &Client{}
 
 // A Client is a client's connection to an IRC server.
@@ -255,6 +260,13 @@ loop:
 				continue
 			}
 			text := msg.Arguments[1]
+			if strings.HasPrefix(text, actionPrefix) {
+				// IRC sends /me actions using CTCP ACTION.
+				// Convert it to raw text prefixed by "/me ".
+				text = strings.TrimPrefix(text, actionPrefix)
+				text = strings.TrimSuffix(text, actionSuffix)
+				text = "/me " + strings.TrimSpace(text)
+			}
 			message := chat.Message{
 				ID:   chat.MessageID(text),
 				From: chatUser(msg.Origin),

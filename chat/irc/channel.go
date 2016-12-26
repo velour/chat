@@ -88,6 +88,12 @@ func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) 
 	// Send a separate message for each line.
 	for _, t := range strings.Split(text, "\n") {
 		// TODO: split the message if it was too long.
+		if strings.HasPrefix(t, "/me") {
+			// If the string begins with /me, convert it to a CTCP action.
+			t = strings.TrimPrefix(t, "/me")
+			t = actionPrefix + " " + strings.TrimSpace(t) + actionSuffix
+		}
+		log.Println(t)
 		if err := send(ctx, ch.client, PRIVMSG, ch.name, t); err != nil {
 			return chat.Message{}, err
 		}
