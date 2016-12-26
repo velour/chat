@@ -1,7 +1,9 @@
 package irc
 
 import (
+	"context"
 	"io"
+	"log"
 	"strings"
 	"sync"
 
@@ -66,38 +68,54 @@ func newChannel(client *Client, name string) *channel {
 	return ch
 }
 
-func (ch *channel) Receive() (interface{}, error) {
-	ev, ok := <-ch.out
-	if !ok {
-		return nil, io.EOF
+func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case ev, ok := <-ch.out:
+		if !ok {
+			return nil, io.EOF
+		}
+		ch.Lock()
+		log.Printf("%s users %+v\n", ch.name, ch.users)
+		ch.Unlock()
+		return ev, nil
 	}
-	return ev, nil
 }
 
-func (ch *channel) Send(text string) (chat.Message, error) {
+func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) {
 	// IRC doesn't support newlines in messages.
 	// Send a separate message for each line.
 	for _, t := range strings.Split(text, "\n") {
 		// TODO: split the message if it was too long.
-		if err := send(ch.client, PRIVMSG, ch.name, t); err != nil {
+		if strings.HasPrefix(t, "/me") {
+			// If the string begins with /me, convert it to a CTCP action.
+			t = strings.TrimPrefix(t, "/me")
+			t = actionPrefix + " " + strings.TrimSpace(t) + actionSuffix
+		}
+		log.Println(t)
+		if err := send(ctx, ch.client, PRIVMSG, ch.name, t); err != nil {
 			return chat.Message{}, err
 		}
 	}
 	ch.client.Lock()
 	nick := ch.client.nick
 	ch.client.Unlock()
-	return chat.Message{ID: chat.MessageID(text), From: chatUser(nick), Text: text}, nil
+	msg := chat.Message{ID: chat.MessageID(text), From: chatUser(nick), Text: text}
+	return msg, nil
 }
 
 // Delete is a no-op for IRC.
-func (ch *channel) Delete(chat.MessageID) error { return nil }
+func (ch *channel) Delete(context.Context, chat.MessageID) error { return nil }
 
 // Edit is a no-op for IRC, it simply returns the given MessageID.
-func (c *channel) Edit(id chat.MessageID, _ string) (chat.MessageID, error) { return id, nil }
+func (c *channel) Edit(_ context.Context, id chat.MessageID, _ string) (chat.MessageID, error) {
+	return id, nil
+}
 
 // Reply is equivalent to Send for IRC.
 //
 // TODO: quote the replyTo message and add the reply text after it.
-func (ch *channel) Reply(replyTo chat.Message, text string) (chat.Message, error) {
-	return ch.Send(text)
+func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
+	return ch.Send(ctx, text)
 }

@@ -1,10 +1,12 @@
 // Package chat provides a common API for chat service clients.
 package chat
 
+import "context"
+
 // A Client is a handle to a client connection to a chat service.
 type Client interface {
 	// Close closes the Client, reporting any pending errors encountered.
-	Close() error
+	Close(ctx context.Context) error
 
 	// Join joins the client to a new Channel.
 	//
@@ -12,27 +14,27 @@ type Client interface {
 	// bots remain in their joined Channels even after disconnect.
 	// In these cases, Join may not actually change the joined-status of the bot,
 	// but simply return the Channel interface.
-	Join(channel string) (Channel, error)
+	Join(ctx context.Context, channel string) (Channel, error)
 }
 
 // A Channel is a handle to a channel joined by the Client.
 type Channel interface {
 	// Receive receives the next event from the Channel.
-	Receive() (interface{}, error)
+	Receive(ctx context.Context) (interface{}, error)
 
 	// Send sends text to the Channel and returns the sent Message.
-	Send(text string) (Message, error)
+	Send(ctx context.Context, text string) (Message, error)
 
 	// Delete deletes the a message.
 	//
 	// Implementations that do not support deleting messages may treat this as a no-op.
-	Delete(id MessageID) error
+	Delete(ctx context.Context, id MessageID) error
 
 	// Edit edits a sent message to have the given next text,
 	// and returns the unique ID representing the edited message.
 	//
 	// Implementations that do not support editing messages may treat this as a no-op.
-	Edit(id MessageID, newText string) (MessageID, error)
+	Edit(ctx context.Context, id MessageID, newText string) (MessageID, error)
 
 	// Reply replies to a message and returns the replied Message.
 	//
@@ -40,7 +42,7 @@ type Channel interface {
 	// As an enhancement, such an implementation could instead
 	// quote the user and text from the replyTo message,
 	// and send the reply text following the quote.
-	Reply(replyTo Message, text string) (Message, error)
+	Reply(ctx context.Context, replyTo Message, text string) (Message, error)
 }
 
 // A MessageID is a unique string representing a sent message.

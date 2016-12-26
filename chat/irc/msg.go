@@ -4,6 +4,7 @@ package irc
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -126,6 +127,25 @@ func read(in io.ByteReader) (Message, error) {
 			msg = append(msg, c)
 		}
 	}
+}
+
+func readWithContext(ctx context.Context, in io.ByteReader) (Message, error) {
+	err := make(chan error)
+	var msg Message
+	go func() {
+		var e error
+		msg, e = read(in)
+		err <- e
+	}()
+	select {
+	case <-ctx.Done():
+		return Message{}, ctx.Err()
+	case err := <-err:
+		if err != nil {
+			return Message{}, err
+		}
+	}
+	return msg, nil
 }
 
 func junk(in io.ByteReader) (int, error) {
