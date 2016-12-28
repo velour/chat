@@ -88,7 +88,12 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 	// Send a separate message for each line.
 	for _, t := range strings.Split(text, "\n") {
 		if sendAs != nil {
-			t = "<" + sendAs.DisplayName() + "> " + t
+			const mePrefix = "/me "
+			if strings.HasPrefix(text, mePrefix) {
+				t = "*" + sendAs.DisplayName() + " " + strings.TrimPrefix(text, mePrefix)
+			} else {
+				t = "<" + sendAs.DisplayName() + "> " + t
+			}
 		}
 		// TODO: split the message if it was too long.
 		if strings.HasPrefix(t, "/me") {
