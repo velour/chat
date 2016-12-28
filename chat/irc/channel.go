@@ -3,7 +3,6 @@ package irc
 import (
 	"context"
 	"io"
-	"log"
 	"strings"
 	"sync"
 
@@ -76,9 +75,6 @@ func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 		if !ok {
 			return nil, io.EOF
 		}
-		ch.Lock()
-		log.Printf("%s users %+v\n", ch.name, ch.users)
-		ch.Unlock()
 		return ev, nil
 	}
 }
@@ -101,7 +97,6 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 			t = strings.TrimPrefix(t, "/me")
 			t = actionPrefix + " " + strings.TrimSpace(t) + actionSuffix
 		}
-		log.Println(t)
 		if err := send(ctx, ch.client, PRIVMSG, ch.name, t); err != nil {
 			return chat.Message{}, err
 		}
