@@ -79,23 +79,29 @@ func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 	}
 }
 
-func (ch *channel) send(ctx context.Context, sendAs *chat.User, text string) (chat.Message, error) {
-	// IRC doesn't support newlines in messages.
-	// Send a separate message for each line.
-	for _, t := range strings.Split(text, "\n") {
-		if sendAs != nil {
-			const mePrefix = "/me "
-			if strings.HasPrefix(text, mePrefix) {
-				t = "*" + sendAs.DisplayName() + " " + strings.TrimPrefix(text, mePrefix)
-			} else {
-				t = "<" + sendAs.DisplayName() + "> " + t
-			}
+// send sends a message to the channel.
+// linePrefix is prepended after any prefix indicating the sendAs user,
+// to each line after the first.
+func (ch *channel) send(ctx context.Context, sendAs *chat.User, linePrefix, text string) (chat.Message, error) {
+	const mePrefix = "/me "
+	var prefix, suffix string
+	if sendAs != nil {
+		if strings.HasPrefix(text, mePrefix) {
+			text = strings.TrimPrefix(text, mePrefix)
+			prefix = "*" + sendAs.DisplayName() + " "
+		} else {
+			prefix = "<" + sendAs.DisplayName() + "> "
 		}
-		// TODO: split the message if it was too long.
-		if strings.HasPrefix(t, "/me") {
-			// If the string begins with /me, convert it to a CTCP action.
-			t = strings.TrimPrefix(t, "/me")
-			t = actionPrefix + " " + strings.TrimSpace(t) + actionSuffix
+	} else if strings.HasPrefix(text, mePrefix) {
+		text = strings.TrimPrefix(text, mePrefix)
+		prefix = actionPrefix + " "
+		suffix = actionSuffix
+	}
+	for i, t := range strings.Split(text, "\n") {
+		if i == 0 {
+			t = prefix + t + suffix
+		} else {
+			t = prefix + linePrefix + t + suffix
 		}
 		if err := send(ctx, ch.client, PRIVMSG, ch.name, t); err != nil {
 			return chat.Message{}, err
@@ -113,11 +119,11 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 }
 
 func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) {
-	return ch.send(ctx, nil, text)
+	return ch.send(ctx, nil, "", text)
 }
 
 func (ch *channel) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
-	return ch.send(ctx, &sendAs, text)
+	return ch.send(ctx, &sendAs, "", text)
 }
 
 // Delete is a no-op for IRC.
@@ -128,16 +134,22 @@ func (c *channel) Edit(_ context.Context, id chat.MessageID, _ string) (chat.Mes
 	return id, nil
 }
 
-// Reply is equivalent to Send for IRC.
-//
-// TODO: quote the replyTo message and add the reply text after it.
-func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
-	return ch.Send(ctx, text)
+func (ch *channel) reply(ctx context.Context, sendAs *chat.User, replyTo chat.Message, text string) (chat.Message, error) {
+	quoted := replyTo.From.DisplayName() + " > " + replyTo.Text
+	if _, err := ch.send(ctx, sendAs, "> ", quoted); err != nil {
+		return chat.Message{}, nil
+	}
+	msg, err := ch.send(ctx, sendAs, "", text)
+	if err != nil {
+		return chat.Message{}, nil
+	}
+	return msg, nil
 }
 
-// ReplyAs is equivalent to SendAs for IRC.
-//
-// TODO: quote the replyTo message and add the reply text after it.
+func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
+	return ch.reply(ctx, nil, replyTo, text)
+}
+
 func (ch *channel) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Message, text string) (chat.Message, error) {
-	return ch.SendAs(ctx, sendAs, text)
+	return ch.reply(ctx, &sendAs, replyTo, text)
 }
