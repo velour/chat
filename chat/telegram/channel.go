@@ -107,7 +107,12 @@ func chatEvent(u *Update) (interface{}, error) {
 
 func (ch *channel) send(ctx context.Context, sendAs *chat.User, replyTo *chat.Message, text string) (chat.Message, error) {
 	if sendAs != nil {
-		text = "*" + sendAs.DisplayName() + "*: " + text
+		const mePrefix = "/me "
+		if strings.HasPrefix(text, mePrefix) {
+			text = "*" + sendAs.DisplayName() + "* " + strings.TrimPrefix(text, mePrefix)
+		} else {
+			text = "*" + sendAs.DisplayName() + "*: " + text
+		}
 	}
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
