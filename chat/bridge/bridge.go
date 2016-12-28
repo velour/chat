@@ -20,6 +20,8 @@ import (
 	"github.com/velour/bridge/chat"
 )
 
+const maxHistory = 500
+
 var _ chat.Channel = &Bridge{}
 
 // A Bridge is a chat.Channel that bridges multiple channels.
@@ -61,6 +63,19 @@ type Bridge struct {
 
 	// nextID is the next ID for messages sent by the bridge.
 	nextID int
+
+	// log is a history of messages sent with or relayed by the bridge.
+	log []*logEntry
+}
+
+type logEntry struct {
+	origin chat.Channel
+	copies []message
+}
+
+type message struct {
+	to  chat.Channel
+	msg chat.Message
 }
 
 // New returns a new bridge that bridges a set of channels.
@@ -93,8 +108,8 @@ func (b *Bridge) Close(context.Context) error {
 }
 
 type event struct {
-	from chat.Channel
-	what interface{}
+	origin chat.Channel
+	what   interface{}
 }
 
 // mux multiplexes:
@@ -112,7 +127,7 @@ func mux(ctx context.Context, cancel context.CancelFunc, b *Bridge) {
 			b.closeError <- err
 			return
 		case ev := <-b.eventsMux:
-			if err := relay(ctx, ev, b.channels); err != nil {
+			if err := relay(ctx, b, ev); err != nil {
 				b.closeError <- err
 				return
 			}
@@ -160,34 +175,48 @@ func poll(ctx context.Context, b *Bridge, ch chat.Channel) {
 			}
 			return
 		default:
-			b.eventsMux <- event{from: ch, what: ev}
+			b.eventsMux <- event{origin: ch, what: ev}
 		}
 	}
 }
 
-func relay(ctx context.Context, ev event, channels []chat.Channel) error {
-	for _, ch := range channels {
-		if ch == ev.from {
-			continue
+func logMessage(b *Bridge, entry *logEntry) {
+	b.Lock()
+	b.log = append(b.log, entry)
+	if len(b.log) > maxHistory {
+		b.log = b.log[:maxHistory]
+	}
+	b.Unlock()
+}
+
+func relay(ctx context.Context, b *Bridge, event event) error {
+	switch ev := event.what.(type) {
+	case chat.Message:
+		entry, err := send(ctx, b, event.origin, &ev.From, ev.Text)
+		if err != nil {
+			return err
 		}
-		switch ev := ev.what.(type) {
-		case chat.Message:
-			if _, err := ch.SendAs(ctx, ev.From, ev.Text); err != nil {
-				return err
-			}
-		case chat.Delete:
-			// TODO
-		case chat.Edit:
-			// TODO
-		case chat.Reply:
-			// TODO
-		case chat.Join:
-			// TODO
-		case chat.Leave:
-			// TODO
-		case chat.Rename:
-			// TODO
+		entry.copies = append(entry.copies, message{to: event.origin, msg: ev})
+		return nil
+
+	case chat.Delete:
+		// TODO
+	case chat.Edit:
+		// TODO
+	case chat.Reply:
+		entry, err := reply(ctx, b, event.origin, &ev.Reply.From, ev.ReplyTo, ev.Reply.Text)
+		if err != nil {
+			return err
 		}
+		entry.copies = append(entry.copies, message{to: event.origin, msg: ev.Reply})
+		return nil
+
+	case chat.Join:
+		// TODO
+	case chat.Leave:
+		// TODO
+	case chat.Rename:
+		// TODO
 	}
 	return nil
 }
@@ -219,25 +248,47 @@ func nextID(b *Bridge) chat.MessageID {
 	return chat.MessageID(strconv.Itoa(b.nextID - 1))
 }
 
-// Send sends text to all channels on the Bridge.
-func (b *Bridge) Send(ctx context.Context, text string) (chat.Message, error) {
+// send sends a message to all Channels on the Bridge except the origin channel.
+// The sent message is logged in the Bridge history and returned.
+func send(ctx context.Context, b *Bridge, origin chat.Channel, sendAs *chat.User, text string) (*logEntry, error) {
+	entry := &logEntry{origin: origin}
 	for _, ch := range b.channels {
-		if _, err := ch.Send(ctx, text); err != nil {
-			return chat.Message{}, err
+		var err error
+		var m chat.Message
+		if ch == origin {
+			continue
 		}
+		if sendAs == nil {
+			m, err = ch.Send(ctx, text)
+		} else {
+			m, err = ch.SendAs(ctx, *sendAs, text)
+		}
+		if err != nil {
+			return nil, err
+		}
+		entry.copies = append(entry.copies, message{to: ch, msg: m})
+	}
+	logMessage(b, entry)
+	return entry, nil
+}
+
+func (b *Bridge) Send(ctx context.Context, text string) (chat.Message, error) {
+	entry, err := send(ctx, b, b, nil, text)
+	if err != nil {
+		return chat.Message{}, err
 	}
 	msg := chat.Message{ID: nextID(b), From: me(b), Text: text}
+	entry.copies = append(entry.copies, message{to: b, msg: msg})
 	return msg, nil
 }
 
-// SendAs sends text on behalf of a given user to all channels on the Bridge.
 func (b *Bridge) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
-	for _, ch := range b.channels {
-		if _, err := ch.SendAs(ctx, sendAs, text); err != nil {
-			return chat.Message{}, err
-		}
+	entry, err := send(ctx, b, b, &sendAs, text)
+	if err != nil {
+		return chat.Message{}, err
 	}
 	msg := chat.Message{ID: nextID(b), From: sendAs, Text: text}
+	entry.copies = append(entry.copies, message{to: b, msg: msg})
 	return msg, nil
 }
 
@@ -249,12 +300,77 @@ func (b *Bridge) Edit(_ context.Context, id chat.MessageID, _ string) (chat.Mess
 	return id, nil
 }
 
-// Reply is equivalent to Send for a Bridge.
-func (b *Bridge) Reply(ctx context.Context, _ chat.Message, text string) (chat.Message, error) {
-	return b.Send(ctx, text)
+func findLogEntry(b *Bridge, origin chat.Channel, msg *chat.Message) *logEntry {
+	for _, m := range b.log {
+		for _, c := range m.copies {
+			if c.to == origin && c.msg.ID == msg.ID {
+				return m
+			}
+		}
+	}
+	return nil
 }
 
-// ReplyAs is equivalent to SendAs for a Bridge.
-func (b *Bridge) ReplyAs(ctx context.Context, user chat.User, _ chat.Message, text string) (chat.Message, error) {
-	return b.SendAs(ctx, user, text)
+func findCopy(log *logEntry, ch chat.Channel) *chat.Message {
+	if log == nil {
+		return nil
+	}
+	for _, c := range log.copies {
+		if c.to == ch {
+			return &c.msg
+		}
+	}
+	return nil
+}
+
+// reply replies to a message in all Channels on the Bridge except the origin.
+// The replied message is logged to the Bridge history and returned.
+// If history is not found for the replyTo message,
+// this is treated as a normal send instead of a reply.
+func reply(ctx context.Context, b *Bridge, origin chat.Channel, sendAs *chat.User, replyTo chat.Message, text string) (*logEntry, error) {
+	entry := &logEntry{origin: origin}
+	replyToLog := findLogEntry(b, origin, &replyTo)
+	for _, ch := range b.channels {
+		var err error
+		var m chat.Message
+		if ch == origin {
+			continue
+		}
+		switch replyToCopy := findCopy(replyToLog, ch); {
+		case replyToCopy != nil && sendAs == nil:
+			m, err = ch.Reply(ctx, *replyToCopy, text)
+		case replyToCopy != nil && sendAs != nil:
+			m, err = ch.ReplyAs(ctx, *sendAs, *replyToCopy, text)
+		case sendAs == nil:
+			m, err = ch.Send(ctx, text)
+		case sendAs != nil:
+			m, err = ch.SendAs(ctx, *sendAs, text)
+		}
+		if err != nil {
+			return nil, err
+		}
+		entry.copies = append(entry.copies, message{to: ch, msg: m})
+	}
+	logMessage(b, entry)
+	return entry, nil
+}
+
+func (b *Bridge) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
+	entry, err := reply(ctx, b, b, nil, replyTo, text)
+	if err != nil {
+		return chat.Message{}, err
+	}
+	msg := chat.Message{ID: nextID(b), From: me(b), Text: text}
+	entry.copies = append(entry.copies, message{to: b, msg: msg})
+	return msg, nil
+}
+
+func (b *Bridge) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Message, text string) (chat.Message, error) {
+	entry, err := reply(ctx, b, b, &sendAs, replyTo, text)
+	if err != nil {
+		return chat.Message{}, err
+	}
+	msg := chat.Message{ID: nextID(b), From: sendAs, Text: text}
+	entry.copies = append(entry.copies, message{to: b, msg: msg})
+	return msg, nil
 }
