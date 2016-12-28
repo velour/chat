@@ -83,10 +83,13 @@ func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 	}
 }
 
-func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) {
+func (ch *channel) send(ctx context.Context, sendAs *chat.User, text string) (chat.Message, error) {
 	// IRC doesn't support newlines in messages.
 	// Send a separate message for each line.
 	for _, t := range strings.Split(text, "\n") {
+		if sendAs != nil {
+			t = "<" + sendAs.DisplayName() + "> " + t
+		}
 		// TODO: split the message if it was too long.
 		if strings.HasPrefix(t, "/me") {
 			// If the string begins with /me, convert it to a CTCP action.
@@ -98,11 +101,23 @@ func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) 
 			return chat.Message{}, err
 		}
 	}
-	ch.client.Lock()
-	nick := ch.client.nick
-	ch.client.Unlock()
-	msg := chat.Message{ID: chat.MessageID(text), From: chatUser(nick), Text: text}
+	msg := chat.Message{ID: chat.MessageID(text), Text: text}
+	if sendAs == nil {
+		ch.client.Lock()
+		msg.From = chatUser(ch.client.nick)
+		ch.client.Unlock()
+	} else {
+		msg.From = *sendAs
+	}
 	return msg, nil
+}
+
+func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) {
+	return ch.send(ctx, nil, text)
+}
+
+func (ch *channel) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
+	return ch.send(ctx, &sendAs, text)
 }
 
 // Delete is a no-op for IRC.
@@ -118,4 +133,11 @@ func (c *channel) Edit(_ context.Context, id chat.MessageID, _ string) (chat.Mes
 // TODO: quote the replyTo message and add the reply text after it.
 func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
 	return ch.Send(ctx, text)
+}
+
+// ReplyAs is equivalent to SendAs for IRC.
+//
+// TODO: quote the replyTo message and add the reply text after it.
+func (ch *channel) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Message, text string) (chat.Message, error) {
+	return ch.SendAs(ctx, sendAs, text)
 }

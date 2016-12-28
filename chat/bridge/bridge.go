@@ -20,6 +20,8 @@ import (
 	"github.com/velour/bridge/chat"
 )
 
+var _ chat.Channel = &Bridge{}
+
 // A Bridge is a chat.Channel that bridges multiple channels.
 // Events sent on each bridged channel are:
 // 1) relayed to all other channels in the bridge, and
@@ -170,8 +172,7 @@ func relay(ctx context.Context, ev event, channels []chat.Channel) error {
 		}
 		switch ev := ev.what.(type) {
 		case chat.Message:
-			text := "*" + ev.From.Name + "*: " + ev.Text
-			if _, err := ch.Send(ctx, text); err != nil {
+			if _, err := ch.SendAs(ctx, ev.From, ev.Text); err != nil {
 				return err
 			}
 		case chat.Delete:
@@ -201,6 +202,23 @@ func (b *Bridge) Receive(ctx context.Context) (interface{}, error) {
 	}
 }
 
+func me(b *Bridge) chat.User {
+	// TODO: use a more informative bridge User.
+	// Option: get the User info from channels[0].
+	return chat.User{
+		ID:   chat.UserID("bridge"),
+		Nick: "bridge",
+		Name: "bridge",
+	}
+}
+
+func nextID(b *Bridge) chat.MessageID {
+	b.Lock()
+	defer b.Unlock()
+	b.nextID++
+	return chat.MessageID(strconv.Itoa(b.nextID - 1))
+}
+
 // Send sends text to all channels on the Bridge.
 func (b *Bridge) Send(ctx context.Context, text string) (chat.Message, error) {
 	for _, ch := range b.channels {
@@ -208,21 +226,18 @@ func (b *Bridge) Send(ctx context.Context, text string) (chat.Message, error) {
 			return chat.Message{}, err
 		}
 	}
-	b.Lock()
-	id := b.nextID
-	b.nextID++
-	b.Unlock()
-	msg := chat.Message{
-		ID: chat.MessageID(strconv.Itoa(id)),
-		// TODO: use a more informative bridge User.
-		// Option: get the User info from channels[0].
-		From: chat.User{
-			ID:   chat.UserID("bridge"),
-			Nick: "bridge",
-			Name: "bridge",
-		},
-		Text: text,
+	msg := chat.Message{ID: nextID(b), From: me(b), Text: text}
+	return msg, nil
+}
+
+// SendAs sends text on behalf of a given user to all channels on the Bridge.
+func (b *Bridge) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
+	for _, ch := range b.channels {
+		if _, err := ch.SendAs(ctx, sendAs, text); err != nil {
+			return chat.Message{}, err
+		}
 	}
+	msg := chat.Message{ID: nextID(b), From: sendAs, Text: text}
 	return msg, nil
 }
 
@@ -234,7 +249,12 @@ func (b *Bridge) Edit(_ context.Context, id chat.MessageID, _ string) (chat.Mess
 	return id, nil
 }
 
-// Reply is equivalent to Sending the text on the Bridge.
+// Reply is equivalent to Send for a Bridge.
 func (b *Bridge) Reply(ctx context.Context, _ chat.Message, text string) (chat.Message, error) {
 	return b.Send(ctx, text)
+}
+
+// ReplyAs is equivalent to SendAs for a Bridge.
+func (b *Bridge) ReplyAs(ctx context.Context, user chat.User, _ chat.Message, text string) (chat.Message, error) {
+	return b.SendAs(ctx, user, text)
 }

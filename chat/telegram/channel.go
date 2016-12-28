@@ -105,7 +105,10 @@ func chatEvent(u *Update) (interface{}, error) {
 	return nil, nil
 }
 
-func (ch *channel) sendMessage(ctx context.Context, replyTo *chat.Message, text string) (chat.Message, error) {
+func (ch *channel) send(ctx context.Context, sendAs *chat.User, replyTo *chat.Message, text string) (chat.Message, error) {
+	if sendAs != nil {
+		text = "*" + sendAs.DisplayName() + "*: " + text
+	}
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
 		"text":       text,
@@ -118,11 +121,19 @@ func (ch *channel) sendMessage(ctx context.Context, replyTo *chat.Message, text 
 	if err := rpc(ctx, ch.client, "sendMessage", req, &resp); err != nil {
 		return chat.Message{}, err
 	}
-	return chatMessage(&resp), nil
+	msg := chatMessage(&resp)
+	if sendAs != nil {
+		msg.From = *sendAs
+	}
+	return msg, nil
 }
 
 func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) {
-	return ch.sendMessage(ctx, nil, text)
+	return ch.send(ctx, nil, nil, text)
+}
+
+func (ch *channel) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
+	return ch.send(ctx, &sendAs, nil, text)
 }
 
 // Delete is a no-op for Telegram, as it's bot API doesn't support message deletion.
@@ -143,7 +154,11 @@ func (ch *channel) Edit(ctx context.Context, messageID chat.MessageID, text stri
 }
 
 func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
-	return ch.sendMessage(ctx, &replyTo, text)
+	return ch.send(ctx, nil, &replyTo, text)
+}
+
+func (ch *channel) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Message, text string) (chat.Message, error) {
+	return ch.send(ctx, &sendAs, &replyTo, text)
 }
 
 func chatMessageID(m *Message) chat.MessageID {

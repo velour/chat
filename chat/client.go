@@ -25,6 +25,14 @@ type Channel interface {
 	// Send sends text to the Channel and returns the sent Message.
 	Send(ctx context.Context, text string) (Message, error)
 
+	// SendAs sends text to the Channel on behalf of a given user and returns the sent Message.
+	// The difference between SendAs and Send is that
+	// SendAs indicates a message sent on behalf of a user other that the current Client.
+	// An acceptable implementation may simply prefix text with the user's name or nick.
+	//
+	// Note that sendAs.ID may not be from the chat service undelying this Channel.
+	SendAs(ctx context.Context, sendAs User, text string) (Message, error)
+
 	// Delete deletes the a message.
 	//
 	// Implementations that do not support deleting messages may treat this as a no-op.
@@ -43,6 +51,14 @@ type Channel interface {
 	// quote the user and text from the replyTo message,
 	// and send the reply text following the quote.
 	Reply(ctx context.Context, replyTo Message, text string) (Message, error)
+
+	// ReplyAs replies to a message on behalf of a given user and returns the replied Message.
+	// The difference between ReplyAs and Reply is that
+	// ReplyAs indicates a message sent on behalf of a user other that the current Client.
+	// An acceptable implementation may simply prefix text with the user's name or nick.
+	//
+	// Note that sendAs.ID may not be from the chat service undelying this Channel.
+	ReplyAs(ctx context.Context, sendAs User, replyTo Message, text string) (Message, error)
 }
 
 // A MessageID is a unique string representing a sent message.
@@ -118,4 +134,18 @@ type User struct {
 
 	// Name is the user's full name.
 	Name string
+}
+
+// DisplayName returns a name for the User that is suitable for display.
+func (u User) DisplayName() string {
+	if u.Name != "" {
+		return u.Name
+	}
+	if u.Nick != "" {
+		return u.Nick
+	}
+	if u.ID != "" {
+		return string(u.ID)
+	}
+	return "unknown"
 }
