@@ -80,8 +80,7 @@ func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 }
 
 // send sends a message to the channel.
-// linePrefix is prepended after any prefix indicating the sendAs user,
-// to each line after the first.
+// linePrefix is prepended to each line after any prefix indicating the sendAs user.
 func (ch *channel) send(ctx context.Context, sendAs *chat.User, linePrefix, text string) (chat.Message, error) {
 	const mePrefix = "/me "
 	var prefix, suffix string
@@ -97,12 +96,8 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, linePrefix, text
 		prefix = actionPrefix + " "
 		suffix = actionSuffix
 	}
-	for i, t := range strings.Split(text, "\n") {
-		if i == 0 {
-			t = prefix + t + suffix
-		} else {
-			t = prefix + linePrefix + t + suffix
-		}
+	for _, t := range strings.Split(text, "\n") {
+		t = prefix + linePrefix + t + suffix
 		if err := send(ctx, ch.client, PRIVMSG, ch.name, t); err != nil {
 			return chat.Message{}, err
 		}
@@ -135,8 +130,8 @@ func (c *channel) Edit(_ context.Context, id chat.MessageID, _ string) (chat.Mes
 }
 
 func (ch *channel) reply(ctx context.Context, sendAs *chat.User, replyTo chat.Message, text string) (chat.Message, error) {
-	quoted := replyTo.From.DisplayName() + " > " + replyTo.Text
-	if _, err := ch.send(ctx, sendAs, "> ", quoted); err != nil {
+	quote := replyTo.From.DisplayName() + "> "
+	if _, err := ch.send(ctx, sendAs, quote, replyTo.Text); err != nil {
 		return chat.Message{}, nil
 	}
 	msg, err := ch.send(ctx, sendAs, "", text)
