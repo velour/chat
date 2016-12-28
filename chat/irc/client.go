@@ -131,7 +131,7 @@ func send(ctx context.Context, c *Client, cmd string, args ...string) error {
 	if len(bs) > MaxBytes {
 		return TooLongError{Message: bs[:MaxBytes], NTrunc: len(bs) - MaxBytes}
 	}
-	err := make(chan error)
+	err := make(chan error, 1)
 	go func() {
 		_, e := c.conn.Write(bs)
 		err <- e

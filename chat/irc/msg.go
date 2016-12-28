@@ -130,7 +130,7 @@ func read(in io.ByteReader) (Message, error) {
 }
 
 func readWithContext(ctx context.Context, in io.ByteReader) (Message, error) {
-	err := make(chan error)
+	err := make(chan error, 1)
 	var msg Message
 	go func() {
 		var e error

@@ -139,7 +139,7 @@ func update(c *Client, u *Update) {
 }
 
 func rpc(ctx context.Context, c *Client, method string, req interface{}, resp interface{}) error {
-	err := make(chan error)
+	err := make(chan error, 1)
 	go func() { err <- _rpc(c, method, req, resp) }()
 	select {
 	case <-ctx.Done():
