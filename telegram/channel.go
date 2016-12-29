@@ -79,36 +79,34 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 		// Ignore messages that originated before the channel was created.
 
 	case u.Message != nil && u.Message.From == nil:
-		// Ignore hmessages without a From field; chat.Message needs a From.
-
-	case u.Message != nil && u.Message.ReplyToMessage != nil:
-		if u.Message.ReplyToMessage.From == nil {
-			// Replying to a channel send?
-			// chat.Message requires a user.
-			// Ignore the reply; just treat it as a normal message.
-			return chatMessage(ch.client, u.Message), nil
-		}
-		return chat.Reply{
-			ReplyTo: chatMessage(ch.client, u.Message.ReplyToMessage),
-			Reply:   chatMessage(ch.client, u.Message),
-		}, nil
-
-	case u.Message != nil && u.Message.NewChatMember != nil:
-		return chat.Join{Who: chatUser(ch.client, u.Message.NewChatMember)}, nil
-
-	case u.Message != nil && u.Message.LeftChatMember != nil:
-		return chat.Leave{Who: chatUser(ch.client, u.Message.LeftChatMember)}, nil
+		// Ignore messages without a From field; chat.Message needs a From.
 
 	case u.Message != nil:
-		return chatMessage(ch.client, u.Message), nil
+		switch msg := u.Message; {
+		case msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil:
+			// If ReplyToMessage doesn't have a From, treat it as a regular Send,
+			// because chat.Message needs a From to fill ReplyTo.
+			replyTo := chatMessage(ch.client, msg.ReplyToMessage)
+			reply := chatMessage(ch.client, msg)
+			return chat.Reply{ReplyTo: replyTo, Reply: reply}, nil
+
+		case msg.NewChatMember != nil:
+			who := chatUser(ch.client, msg.NewChatMember)
+			return chat.Join{Who: who}, nil
+
+		case msg.LeftChatMember != nil:
+			who := chatUser(ch.client, msg.NewChatMember)
+			return chat.Leave{Who: who}, nil
+
+		default:
+			return chatMessage(ch.client, msg), nil
+		}
 
 	case u.EditedMessage != nil:
-		id := chatMessageID(u.EditedMessage)
-		return chat.Edit{
-			ID:    id,
-			NewID: id,
-			Text:  messageText(u.EditedMessage),
-		}, nil
+		msg := u.EditedMessage
+		id := chatMessageID(msg)
+		text := messageText(msg)
+		return chat.Edit{ID: id, NewID: id, Text: text}, nil
 	}
 	return nil, nil
 }
