@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/eaburns/pretty"
 	"github.com/velour/chat"
@@ -50,7 +51,13 @@ func main() {
 		panic(err)
 	}
 
-	http.Handle("/telegram/media/", telegramClient)
+	const telegramMediaPath = "/telegram/media/"
+	http.Handle(telegramMediaPath, telegramClient)
+	telegramClient.SetLocalURL(url.URL{
+		Scheme: "http",
+		Host:   "localhost" + *httpPort,
+		Path:   telegramMediaPath,
+	})
 	go http.ListenAndServe(*httpPort, nil)
 
 	b := bridge.New(ircChannel, telegramChannel)

@@ -135,6 +135,9 @@ type User struct {
 
 	// Name is the user's full name.
 	Name string
+
+	// PhotoURL, if non-empty, is the URL to the User's profile photo.
+	PhotoURL string
 }
 
 // DisplayName returns a name for the User that is suitable for display.

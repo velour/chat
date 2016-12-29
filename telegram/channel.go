@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"io"
+	"path"
 	"strconv"
 	"strings"
 
@@ -51,7 +52,7 @@ func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 			if !ok {
 				return nil, io.EOF
 			}
-			switch ev, err := chatEvent(u); {
+			switch ev, err := chatEvent(ch.client, u); {
 			case err != nil:
 				return nil, err
 			case ev == nil:
@@ -66,7 +67,7 @@ func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 // chatEvent returns the chat event corresponding to the update.
 // If the Update cannot be mapped, nil is returned with a nil error.
 // This signifies an Update that sholud be ignored.
-func chatEvent(u *Update) (interface{}, error) {
+func chatEvent(c *Client, u *Update) (interface{}, error) {
 	switch {
 	case u.Message != nil && u.Message.From == nil:
 		// If From is nil, this is a message sent to a channel.
@@ -78,21 +79,21 @@ func chatEvent(u *Update) (interface{}, error) {
 			// Replying to a channel send?
 			// chat.Message requires a user.
 			// Ignore the reply; just treat it as a normal message.
-			return chatMessage(u.Message), nil
+			return chatMessage(c, u.Message), nil
 		}
 		return chat.Reply{
-			ReplyTo: chatMessage(u.Message.ReplyToMessage),
-			Reply:   chatMessage(u.Message),
+			ReplyTo: chatMessage(c, u.Message.ReplyToMessage),
+			Reply:   chatMessage(c, u.Message),
 		}, nil
 
 	case u.Message != nil && u.Message.NewChatMember != nil:
-		return chat.Join{Who: chatUser(u.Message.NewChatMember)}, nil
+		return chat.Join{Who: chatUser(c, u.Message.NewChatMember)}, nil
 
 	case u.Message != nil && u.Message.LeftChatMember != nil:
-		return chat.Leave{Who: chatUser(u.Message.LeftChatMember)}, nil
+		return chat.Leave{Who: chatUser(c, u.Message.LeftChatMember)}, nil
 
 	case u.Message != nil:
-		return chatMessage(u.Message), nil
+		return chatMessage(c, u.Message), nil
 
 	case u.EditedMessage != nil:
 		id := chatMessageID(u.EditedMessage)
@@ -126,7 +127,7 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, replyTo *chat.Me
 	if err := rpc(ctx, ch.client, "sendMessage", req, &resp); err != nil {
 		return chat.Message{}, err
 	}
-	msg := chatMessage(&resp)
+	msg := chatMessage(ch.client, &resp)
 	if sendAs != nil {
 		msg.From = *sendAs
 	}
@@ -179,24 +180,35 @@ func messageText(m *Message) string {
 }
 
 // chatMessage assumes that m.From != nil.
-func chatMessage(m *Message) chat.Message {
+func chatMessage(c *Client, m *Message) chat.Message {
 	return chat.Message{
 		ID:   chatMessageID(m),
-		From: chatUser(m.From),
+		From: chatUser(c, m.From),
 		Text: messageText(m),
 	}
 }
 
 // chatUser assumes that u != nil.
-func chatUser(u *User) chat.User {
-	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
-	nick := u.Username
+func chatUser(c *Client, user *User) chat.User {
+	name := strings.TrimSpace(user.FirstName + " " + user.LastName)
+	nick := user.Username
 	if nick == "" {
 		nick = name
 	}
+
+	var url string
+	c.Lock()
+	if u, ok := c.users[user.ID]; c.localURL != nil && ok {
+		u.Lock()
+		url = path.Join(c.localURL.String(), u.photo)
+		u.Unlock()
+	}
+	c.Unlock()
+
 	return chat.User{
-		ID:   chat.UserID(strconv.FormatInt(u.ID, 10)),
-		Nick: nick,
-		Name: name,
+		ID:       chat.UserID(strconv.FormatInt(user.ID, 10)),
+		Nick:     nick,
+		Name:     name,
+		PhotoURL: url,
 	}
 }

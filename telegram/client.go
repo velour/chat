@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"sync"
@@ -38,6 +39,7 @@ type Client struct {
 	channels map[int64]*channel
 	users    map[int64]*user
 	media    map[string]*media
+	localURL *url.URL
 }
 
 type user struct {
@@ -106,6 +108,16 @@ func (c *Client) Close(context.Context) error {
 		close(ch.in)
 	}
 	return err
+}
+
+// SetLocalURL enables URL generation for media, using the given URL as a prefix.
+// For example, if SetLocalURL is called with "http://www.abc.com/telegram/media",
+// all Channels on the Client will begin populating non-empty chat.User.PhotoURL fields
+// of the form http://www.abc.com/telegram/media/<photo file>.
+func (c *Client) SetLocalURL(u url.URL) {
+	c.Lock()
+	c.localURL = &u
+	c.Unlock()
 }
 
 func poll(c *Client) {
