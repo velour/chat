@@ -6,11 +6,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/velour/chat"
+)
+
+const (
+	minPhotoUpdateTime = 30 * time.Minute
+	megabyte           = 1000000
+	// Telegram's filesize limit for bots is 20 megabytes.
+	fileSizeLimit = 20 * megabyte
 )
 
 var _ chat.Client = &Client{}
@@ -24,6 +33,16 @@ type Client struct {
 
 	sync.Mutex
 	channels map[int64]*channel
+	users    map[int64]*user
+}
+
+type user struct {
+	sync.Mutex
+	User
+	// photo is the file ID of the user's profile photo.
+	photo string
+	// photoTime is the last time the user's profile photo was updated.
+	photoTime time.Time
 }
 
 // Dial returns a new Client using the given token.
@@ -33,6 +52,7 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 		error:    make(chan error),
 		close:    make(chan bool),
 		channels: make(map[int64]*channel),
+		users:    make(map[int64]*user),
 	}
 	if err := rpc(ctx, c, "getMe", nil, &c.me); err != nil {
 		return nil, err
@@ -77,6 +97,7 @@ func (c *Client) Close(context.Context) error {
 }
 
 func poll(c *Client) {
+	ctx := context.Background()
 	req := struct {
 		Offset  uint64 `json:"offset"`
 		Timeout uint64 `json:"timeout"`
@@ -87,7 +108,7 @@ func poll(c *Client) {
 loop:
 	for {
 		var updates []Update
-		if err = rpc(context.Background(), c, "getUpdates", req, &updates); err != nil {
+		if err = rpc(ctx, c, "getUpdates", req, &updates); err != nil {
 			break
 		}
 		for _, u := range updates {
@@ -96,7 +117,7 @@ loop:
 				panic("out of order updates")
 			}
 			req.Offset = u.UpdateID + 1
-			update(c, &u)
+			update(ctx, c, &u)
 		}
 		select {
 		case <-c.close:
@@ -107,24 +128,33 @@ loop:
 	c.error <- err
 }
 
-func update(c *Client, u *Update) {
+func update(ctx context.Context, c *Client, u *Update) {
 	var chat *Chat
+	var from *User
 	switch {
 	case u.Message != nil:
 		chat = &u.Message.Chat
+		from = u.Message.From
 	case u.EditedMessage != nil:
 		chat = &u.EditedMessage.Chat
+		from = u.EditedMessage.From
 	}
-	if chat == nil {
-		return
-	}
-	if chat.Title == nil {
+	if chat == nil || chat.Title == nil {
 		// Ignore messages not sent to supergroups, channels, or groups.
 		return
 	}
 
 	c.Lock()
 	defer c.Unlock()
+
+	if from != nil {
+		u, ok := c.users[from.ID]
+		if !ok {
+			u = &user{User: *from}
+			c.users[from.ID] = u
+		}
+		go updateUser(ctx, c, u, *from)
+	}
 
 	var ch *channel
 	if ch = c.channels[chat.ID]; ch == nil {
@@ -136,6 +166,55 @@ func update(c *Client, u *Update) {
 	case us := <-ch.in:
 		ch.in <- append(us, u)
 	}
+}
+
+func updateUser(ctx context.Context, c *Client, u *user, latest User) {
+	u.Lock()
+	defer u.Unlock()
+	u.User = latest
+	if time.Since(u.photoTime) < minPhotoUpdateTime {
+		return
+	}
+	photo, err := getProfilePhoto(ctx, c, u.ID)
+	if err != nil {
+		log.Printf("Failed to get user %+v profile photo: %s\n", u, err)
+		return
+	}
+	u.photo = photo
+	u.photoTime = time.Now()
+}
+
+func getProfilePhoto(ctx context.Context, c *Client, userID int64) (string, error) {
+	type userProfilePhotos struct {
+		Photos [][]PhotoSize `json:"photos"`
+	}
+	var resp userProfilePhotos
+	req := map[string]interface{}{"user_id": userID, "limit": 1}
+	if err := rpc(ctx, c, "getUserProfilePhotos", req, &resp); err != nil {
+		return "", err
+	}
+	if len(resp.Photos) == 0 {
+		return "", nil
+	}
+	return biggestPhoto(resp.Photos[0]), nil
+}
+
+func biggestPhoto(photos []PhotoSize) string {
+	var size int
+	var photo string
+	for _, ps := range photos {
+		if ps.FileSize != nil && *ps.FileSize >= fileSizeLimit {
+			continue
+		}
+		if sz := ps.Width * ps.Height; sz > size {
+			photo = ps.FileID
+			size = sz
+		}
+	}
+	if photo == "" && len(photos) > 0 {
+		return photos[0].FileID
+	}
+	return photo
 }
 
 func rpc(ctx context.Context, c *Client, method string, req interface{}, resp interface{}) error {

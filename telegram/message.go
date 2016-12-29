@@ -140,3 +140,19 @@ type Chat struct {
 	// AllMembersAreAdministrators is true if a group has 'all members are administrators' enabled.
 	AllMembersAreAdministrators *bool `json:"all_members_are_administrators"`
 }
+
+// PhotoSize represents a single size of a photo, file, or sticker thumbnail.
+type PhotoSize struct {
+	// FileID is the unique identifier for this file.
+	FileID string `json:"file_id"`
+
+	// Width is the photo width.
+	Width int `json:"width"`
+
+	// Height is the photo height.
+	Height int `json:"height"`
+
+	// FileSize is the file size.
+	// TODO: what are the units, the docs don't say—bytes?
+	FileSize *int `json:"file_size"`
+}
