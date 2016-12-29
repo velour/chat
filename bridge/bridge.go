@@ -14,6 +14,7 @@ package bridge
 
 import (
 	"context"
+	"io"
 	"log"
 	"strconv"
 	"sync"
@@ -86,7 +87,7 @@ func New(channels ...chat.Channel) *Bridge {
 		recvIn:     make(chan []interface{}, 1),
 		recvOut:    make(chan interface{}),
 		pollError:  make(chan error, 1),
-		closeError: make(chan error),
+		closeError: make(chan error, 1),
 		closed:     make(chan struct{}),
 		channels:   channels,
 	}
@@ -248,7 +249,10 @@ func (b *Bridge) Receive(ctx context.Context) (interface{}, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case ev := <-b.recvOut:
+	case ev, ok := <-b.recvOut:
+		if !ok {
+			return nil, io.EOF
+		}
 		return ev, nil
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 
@@ -68,6 +69,9 @@ func main() {
 loop:
 	for {
 		ev, err := b.Receive(ctx)
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
 			panic(err)
 		}
