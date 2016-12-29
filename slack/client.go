@@ -2,6 +2,7 @@
 package slack
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +11,10 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/velour/chat"
 
 	"golang.org/x/net/websocket"
 )
@@ -19,52 +23,30 @@ var (
 	api = url.URL{Scheme: "https", Host: "slack.com", Path: "/api"}
 )
 
-// A ResponseError is a slack response with ok=false and an error message.
-type ResponseError struct{ Response }
-
-func (err ResponseError) Error() string {
-	return "response error: " + err.Response.Error
-}
-
-// Response is a header common to all slack responses.
-type Response struct {
-	OK      bool   `json:"ok"`
-	Error   string `json:"error"`
-	Warning string `json:"warning"`
-}
-
-// A User object describes a slack user.
-type User struct {
-	ID string `json:"id"`
-	// Name is the username without a leading @.
-	Name string `json:"name"`
-	// BUG(eaburns): Add remaining User object fields.
-}
-
-// A Channel object describes a slack channel.
-type Channel struct {
-	ID string `json:"id"`
-	// Name is the name of the channel without a leading #.
-	Name       string `json:"name"`
-	IsArchived bool   `json:"is_archived"`
-}
-
 // A Client represents a connection to the slack API.
 type Client struct {
 	token   string
 	id      string
+	me      User
 	webSock *websocket.Conn
 	done    chan chan<- error
 
-	nextID int
+	users    map[chat.UserID]chat.User
+	channels map[string]Channel
+	nextID   uint64
 	sync.Mutex
 }
 
 // NewClient returns a new slack client using the given token.
 // The returned Client is connected to the RTM endpoint
 // and automatically sends pings.
-func NewClient(token string) (*Client, error) {
-	c := &Client{token: token, done: make(chan chan<- error)}
+func Dial(ctx context.Context, token string) (*Client, error) {
+	c := &Client{
+		token:    token,
+		done:     make(chan chan<- error),
+		channels: make(map[string]Channel),
+		users:    make(map[chat.UserID]chat.User),
+	}
 
 	var resp struct {
 		Response
@@ -86,15 +68,16 @@ func NewClient(token string) (*Client, error) {
 	c.webSock = webSock
 	c.id = resp.Self.ID
 
-	event, err := c.Next()
+	event, err := c.next()
 	if err != nil {
 		return nil, err
 	}
-	if hello, ok := event["type"].(string); !ok || hello != "hello" {
+	if event.Type != "hello" {
 		return nil, fmt.Errorf("expected hello, got %v", event)
 	}
 
 	go ping(c)
+	go c.poll()
 
 	return c, nil
 }
@@ -108,7 +91,7 @@ func ping(c *Client) {
 			ch <- c.webSock.Close()
 			return
 		case <-ticker.C:
-			if err := c.Send(map[string]interface{}{"type": "ping"}); err != nil {
+			if err := c.send(map[string]interface{}{"type": "ping"}); err != nil {
 				ticker.Stop()
 				c.webSock.Close()
 				<-c.done <- fmt.Errorf("failed to send ping: %v", err)
@@ -118,33 +101,84 @@ func ping(c *Client) {
 	}
 }
 
-// Close closes the connection.
-func (c *Client) Close() error {
+// Close ends the Slack client connection
+func (c *Client) Close(_ context.Context) error {
+	for _, ch := range c.channels {
+		close(ch.in)
+	}
 	ch := make(chan error)
 	c.done <- ch
 	return <-ch
 }
 
-// ID returns the client's ID.
-func (c *Client) ID() string { return c.id }
+// Join returns a Channel for a Slack connection
+// Note: Slack users must add the bot to their channel.
+func (c *Client) join(channel string) (Channel, error) {
+	c.Lock()
+	defer c.Unlock()
 
-// Next returns the next event from Slack.
-// It never returns pong type messages.
-func (c *Client) Next() (map[string]interface{}, error) {
-	for {
-		event := make(map[string]interface{})
-		if err := websocket.JSON.Receive(c.webSock, &event); err != nil {
-			return nil, err
+	channels, err := c.channelsList()
+	if err != nil {
+		return Channel{}, err
+	}
+	for _, ch := range channels {
+		if ch.Name == channel || ch.ID == channel {
+			c.channels[ch.ID] = ch // use ID b/c other incoming messages will do so
+			return ch, nil
 		}
-		if t, ok := event["type"].(string); !ok || t != "pong" {
+	}
+	return Channel{}, errors.New("Channel not found")
+}
+
+func (c *Client) Join(ctx context.Context, channel string) (Channel, error) {
+	return c.join(channel)
+}
+
+// next returns the next event from Slack.
+// It never returns pong type messages.
+func (c *Client) next() (Update, error) {
+	for {
+		event := Update{}
+		if err := websocket.JSON.Receive(c.webSock, &event); err != nil {
+			return Update{}, err
+		}
+		if event.Type != "pong" {
 			return event, nil
 		}
 	}
 }
 
-// Send sets the "id" field of the message to the next ID and sends it.
+func (c *Client) poll() {
+	for {
+		msg, err := c.next()
+		if err != nil {
+			continue
+		}
+		switch msg.Type {
+		case "message":
+			c.update(msg)
+		}
+	}
+}
+
+func (c *Client) update(u Update) {
+	c.Lock()
+	defer c.Unlock()
+
+	ch, ok := c.channels[u.Channel]
+	if !ok {
+		ch, _ = c.join(u.Channel)
+	}
+	select {
+	case ch.in <- []*Update{&u}:
+	case us := <-ch.in:
+		ch.in <- append(us, &u)
+	}
+}
+
+// send sets the "id" field of the message to the next ID and sends it.
 // It does not await a response.
-func (c *Client) Send(message map[string]interface{}) error {
+func (c *Client) send(message map[string]interface{}) error {
 	c.Lock()
 	message["id"] = c.nextID
 	c.nextID++
@@ -167,8 +201,8 @@ func (c *Client) UsersList() ([]User, error) {
 	return resp.Members, nil
 }
 
-// ChannelsList returns a list of all slack channels.
-func (c *Client) ChannelsList() ([]Channel, error) {
+// channelsList returns a list of all slack channels.
+func (c *Client) channelsList() ([]Channel, error) {
 	var resp struct {
 		Response
 		Channels []Channel `json:"channels"`
@@ -179,11 +213,19 @@ func (c *Client) ChannelsList() ([]Channel, error) {
 	if !resp.OK {
 		return nil, ResponseError{resp.Response}
 	}
-	return resp.Channels, nil
+	channels := make([]Channel, 0)
+	for _, ch := range resp.Channels {
+		channels = append(channels, makeChannelFromChannel(c, ch))
+	}
+	return channels, nil
 }
 
-// GroupsList returns a list of all slack groups — private channels.
-func (c *Client) GroupsList() ([]Channel, error) {
+func (c *Client) generateNextID() uint64 {
+	return atomic.AddUint64(&c.nextID, 1)
+}
+
+// groupsList returns a list of all slack groups — private channels.
+func (c *Client) groupsList() ([]Channel, error) {
 	var resp struct {
 		Response
 		Groups []Channel `json:"groups"`
@@ -197,8 +239,8 @@ func (c *Client) GroupsList() ([]Channel, error) {
 	return resp.Groups, nil
 }
 
-// PostMessage posts a message to the server with as the given username.
-func (c *Client) PostMessage(username, iconurl, channel, text string) error {
+// postMessage posts a message to the server with as the given username.
+func (c *Client) postMessage(username, iconurl, channel, text string) error {
 	if iconurl != "" {
 		iconurl = "icon_url=" + iconurl
 	}
@@ -216,6 +258,33 @@ func (c *Client) PostMessage(username, iconurl, channel, text string) error {
 		return ResponseError{resp}
 	}
 	return nil
+}
+
+func (c *Client) getUser(id chat.UserID) (chat.User, error) {
+	if u, ok := c.users[id]; ok {
+		return u, nil
+	}
+
+	var resp struct {
+		Response
+		User User `json:"user"`
+	}
+	err := c.do(&resp, "users.info", "user="+string(id))
+	if err != nil {
+		return chat.User{}, err
+	}
+	if !resp.OK {
+		return chat.User{}, fmt.Errorf("User not found: %s", id)
+	}
+
+	c.users[id] = chat.User{
+		ID:       id,
+		Nick:     resp.User.Name,
+		Name:     resp.User.Profile.RealName,
+		PhotoURL: resp.User.Profile.Image,
+	}
+
+	return c.users[id], nil
 }
 
 func (c *Client) do(resp interface{}, method string, args ...string) error {

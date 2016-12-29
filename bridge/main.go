@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/velour/chat"
 	"github.com/velour/chat/bridge"
 	"github.com/velour/chat/irc"
+	"github.com/velour/chat/slack"
 	"github.com/velour/chat/telegram"
 )
 
@@ -26,6 +28,9 @@ var (
 	ircPass    = flag.String("irc-password", "", "The bot's IRC password")
 	ircServer  = flag.String("irc-server", "irc.freenode.net:6697", "The IRC server")
 	ircChannel = flag.String("irc-channel", "#velour-test", "The IRC channel")
+
+	slackToken = flag.String("slack-token", "", "The bot's Slack token")
+	slackRoom  = flag.String("slack-room", "", "The bot's slack room name (not ID)")
 
 	httpPort = flag.String("http-port", ":8888", "The bridge's HTTP server port")
 )
@@ -61,7 +66,17 @@ func main() {
 	})
 	go http.ListenAndServe(*httpPort, nil)
 
-	b := bridge.New(ircChannel, telegramChannel)
+	slackClient, err := slack.Dial(ctx, *slackToken)
+	if err != nil {
+		panic(err)
+	}
+	slackChannel, err := slackClient.Join(ctx, *slackRoom)
+	if err != nil {
+		panic(err)
+	}
+
+	b := bridge.New(ircChannel, telegramChannel, slackChannel)
+	log.Println("Bridge is up and running.")
 	if _, err := b.Send(ctx, "Hello, World!"); err != nil {
 		panic(err)
 	}
