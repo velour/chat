@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"html"
 	"io"
 	"path"
 	"strconv"
@@ -112,18 +113,19 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 }
 
 func (ch *channel) send(ctx context.Context, sendAs *chat.User, replyTo *chat.Message, text string) (chat.Message, error) {
+	text = html.EscapeString(text)
 	if sendAs != nil {
 		const mePrefix = "/me "
 		if strings.HasPrefix(text, mePrefix) {
-			text = "*" + sendAs.DisplayName() + "* " + strings.TrimPrefix(text, mePrefix)
+			text = "<b>" + sendAs.DisplayName() + "</b> " + strings.TrimPrefix(text, mePrefix)
 		} else {
-			text = "*" + sendAs.DisplayName() + "*: " + text
+			text = "<b>" + sendAs.DisplayName() + ":</b> " + text
 		}
 	}
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
 		"text":       text,
-		"parse_mode": "Markdown",
+		"parse_mode": "HTML",
 	}
 	if replyTo != nil {
 		req["reply_to_message_id"] = replyTo.ID
@@ -154,8 +156,8 @@ func (ch *channel) Edit(ctx context.Context, messageID chat.MessageID, text stri
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
 		"message_id": messageID,
-		"text":       text,
-		"parse_mode": "Markdown",
+		"text":       html.EscapeString(text),
+		"parse_mode": "HTML",
 	}
 	var resp Message
 	if err := rpc(ctx, ch.client, "editMessageText", req, &resp); err != nil {
