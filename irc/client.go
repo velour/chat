@@ -217,16 +217,17 @@ loop:
 			sendEvent(c, channelName, &msg, chat.Leave{Who: chatUser(msg.Origin)})
 
 		case NICK:
-			if len(msg.Arguments) < 2 {
+			if len(msg.Arguments) < 1 {
 				log.Printf("Received bad NICK: %+v\n", msg)
 				continue
 			}
+			newNick := msg.Arguments[0]
 			rename := chat.Rename{Who: chatUser(msg.Origin)}
 			// Fake that the ID is their original nick, before the change.
-			rename.Who.ID = chat.UserID(msg.Arguments[1])
+			rename.Who.ID = chat.UserID(newNick)
 
 			c.Lock()
-			if msg.Arguments[1] == c.nick {
+			if newNick == c.nick {
 				// The bot's nick was changed.
 				c.nick = msg.Origin
 			}
@@ -234,7 +235,7 @@ loop:
 				ch.Lock()
 				if ch.users[msg.Origin] {
 					delete(ch.users, msg.Origin)
-					ch.users[msg.Arguments[0]] = true
+					ch.users[newNick] = true
 					sendEventLocked(c, channelName, &msg, rename)
 				}
 				ch.Unlock()
