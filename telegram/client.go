@@ -141,7 +141,7 @@ loop:
 				panic("out of order updates")
 			}
 			req.Offset = u.UpdateID + 1
-			update(ctx, c, &u)
+			update(ctx, c, u)
 		}
 		select {
 		case <-c.close:
@@ -152,7 +152,7 @@ loop:
 	c.error <- err
 }
 
-func update(ctx context.Context, c *Client, u *Update) {
+func update(ctx context.Context, c *Client, u Update) {
 	var chat *Chat
 	var from *User
 	switch {
@@ -186,9 +186,9 @@ func update(ctx context.Context, c *Client, u *Update) {
 		c.channels[chat.ID] = ch
 	}
 	select {
-	case ch.in <- []*Update{u}:
+	case ch.in <- []*Update{&u}:
 	case us := <-ch.in:
-		ch.in <- append(us, u)
+		ch.in <- append(us, &u)
 	}
 }
 
