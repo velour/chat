@@ -1,5 +1,7 @@
 package telegram
 
+import "time"
+
 // These messages match those described in the Telegram API documents.
 // However, snake_case has been converted to CamlCase to match Go style.
 // Optional fields are pointers.
@@ -44,8 +46,8 @@ type Message struct {
 	// From is the sender of the message. It is nil for messages sent to channels.
 	From *User `json:"from"`
 
-	// Date is the Unix time that the message was sent.
-	Date uint64 `json:"date"`
+	// Date is the Unix time, in seconds, that the message was sent.
+	Date int64 `json:"date"`
 
 	// Chat is the chat to which the message was sent.
 	Chat Chat `json:"chat"`
@@ -101,6 +103,9 @@ type Message struct {
 	MigrateFromChatId     *uint64                 `json:"migrate_from_chat_id"`
 	PinnedMessage         *Message                `json:"pinned_message"`
 }
+
+// Time returns the time.Time represented by the Message Date field.
+func (m *Message) Time() time.Time { return time.Unix(m.Date, 0) }
 
 // A User is a user connected to telegram.
 type User struct {

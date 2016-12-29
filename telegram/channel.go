@@ -6,6 +6,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/velour/chat"
 )
@@ -23,14 +24,18 @@ type channel struct {
 	// If the in channel is closed, out is closed
 	// after all pending Updates have been Received.
 	out chan *Update
+
+	// Created is the time that the Channel was created.
+	created time.Time
 }
 
 func newChannel(client *Client, chat Chat) *channel {
 	ch := &channel{
-		client: client,
-		chat:   chat,
-		in:     make(chan []*Update, 1),
-		out:    make(chan *Update),
+		client:  client,
+		chat:    chat,
+		in:      make(chan []*Update, 1),
+		out:     make(chan *Update),
+		created: time.Now(),
 	}
 	go func() {
 		for us := range ch.in {
@@ -52,7 +57,7 @@ func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 			if !ok {
 				return nil, io.EOF
 			}
-			switch ev, err := chatEvent(ch.client, u); {
+			switch ev, err := chatEvent(ch, u); {
 			case err != nil:
 				return nil, err
 			case ev == nil:
@@ -67,33 +72,35 @@ func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 // chatEvent returns the chat event corresponding to the update.
 // If the Update cannot be mapped, nil is returned with a nil error.
 // This signifies an Update that sholud be ignored.
-func chatEvent(c *Client, u *Update) (interface{}, error) {
+func chatEvent(ch *channel, u *Update) (interface{}, error) {
 	switch {
+	case u.Message != nil && u.Message.Time().Before(ch.created):
+	case u.EditedMessage != nil && u.EditedMessage.Time().Before(ch.created):
+		// Ignore messages that originated before the channel was created.
+
 	case u.Message != nil && u.Message.From == nil:
-		// If From is nil, this is a message sent to a channel.
-		// chat.Message requires a user, so just skip these.
-		return nil, nil
+		// Ignore hmessages without a From field; chat.Message needs a From.
 
 	case u.Message != nil && u.Message.ReplyToMessage != nil:
 		if u.Message.ReplyToMessage.From == nil {
 			// Replying to a channel send?
 			// chat.Message requires a user.
 			// Ignore the reply; just treat it as a normal message.
-			return chatMessage(c, u.Message), nil
+			return chatMessage(ch.client, u.Message), nil
 		}
 		return chat.Reply{
-			ReplyTo: chatMessage(c, u.Message.ReplyToMessage),
-			Reply:   chatMessage(c, u.Message),
+			ReplyTo: chatMessage(ch.client, u.Message.ReplyToMessage),
+			Reply:   chatMessage(ch.client, u.Message),
 		}, nil
 
 	case u.Message != nil && u.Message.NewChatMember != nil:
-		return chat.Join{Who: chatUser(c, u.Message.NewChatMember)}, nil
+		return chat.Join{Who: chatUser(ch.client, u.Message.NewChatMember)}, nil
 
 	case u.Message != nil && u.Message.LeftChatMember != nil:
-		return chat.Leave{Who: chatUser(c, u.Message.LeftChatMember)}, nil
+		return chat.Leave{Who: chatUser(ch.client, u.Message.LeftChatMember)}, nil
 
 	case u.Message != nil:
-		return chatMessage(c, u.Message), nil
+		return chatMessage(ch.client, u.Message), nil
 
 	case u.EditedMessage != nil:
 		id := chatMessageID(u.EditedMessage)
