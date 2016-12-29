@@ -125,6 +125,7 @@ type Rename struct {
 // A UserID is a unique string representing a user.
 type UserID string
 
+// User represents a user of a chat network.
 type User struct {
 	// ID is a unique string identifying the User.
 	ID UserID

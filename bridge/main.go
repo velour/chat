@@ -9,10 +9,10 @@ import (
 	"fmt"
 
 	"github.com/eaburns/pretty"
-	"github.com/velour/bridge/chat"
-	"github.com/velour/bridge/chat/bridge"
-	"github.com/velour/bridge/chat/irc"
-	"github.com/velour/bridge/chat/telegram"
+	"github.com/velour/chat"
+	"github.com/velour/chat/bridge"
+	"github.com/velour/chat/irc"
+	"github.com/velour/chat/telegram"
 )
 
 var (

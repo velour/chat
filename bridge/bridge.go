@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/velour/bridge/chat"
+	"github.com/velour/chat"
 )
 
 const maxHistory = 500

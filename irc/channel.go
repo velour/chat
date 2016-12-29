@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/velour/bridge/chat"
+	"github.com/velour/chat"
 )
 
 type channel struct {

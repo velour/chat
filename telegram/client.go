@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/velour/bridge/chat"
+	"github.com/velour/chat"
 )
 
 var _ chat.Client = &Client{}
