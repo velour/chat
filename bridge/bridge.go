@@ -14,6 +14,7 @@ package bridge
 
 import (
 	"context"
+	"log"
 	"strconv"
 	"sync"
 
@@ -212,11 +213,32 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 		return nil
 
 	case chat.Join:
-		// TODO
+		for _, ch := range b.channels {
+			if ch == event.origin {
+				continue
+			}
+			if _, err := ch.Send(ctx, ev.Who.DisplayName()+" joined"); err != nil {
+				log.Printf("Failed to send join message to %s: %s\n", ch, err)
+			}
+		}
 	case chat.Leave:
-		// TODO
+		for _, ch := range b.channels {
+			if ch == event.origin {
+				continue
+			}
+			if _, err := ch.Send(ctx, ev.Who.DisplayName()+" left"); err != nil {
+				log.Printf("Failed to send leave message to %s: %s\n", ch, err)
+			}
+		}
 	case chat.Rename:
-		// TODO
+		for _, ch := range b.channels {
+			if ch == event.origin {
+				continue
+			}
+			if _, err := ch.Send(ctx, ev.Who.DisplayName()+" changed their name"); err != nil {
+				log.Printf("Failed to send rename message: %s\n", err)
+			}
+		}
 	}
 	return nil
 }
