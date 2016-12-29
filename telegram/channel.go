@@ -113,27 +113,42 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 }
 
 func (ch *channel) send(ctx context.Context, sendAs *chat.User, replyTo *chat.Message, text string) (chat.Message, error) {
-	text = html.EscapeString(text)
+	markdownText := text
+	htmlText := html.EscapeString(text)
 	if sendAs != nil {
 		const mePrefix = "/me "
+		name := sendAs.DisplayName()
 		if strings.HasPrefix(text, mePrefix) {
-			text = "<b>" + sendAs.DisplayName() + "</b> " + strings.TrimPrefix(text, mePrefix)
+			htmlText = "<b>" + name + "</b> " + strings.TrimPrefix(htmlText, mePrefix)
+			markdownText = "*" + name + "* " + strings.TrimPrefix(markdownText, mePrefix)
 		} else {
-			text = "<b>" + sendAs.DisplayName() + ":</b> " + text
+			htmlText = "<b>" + name + ":</b> " + htmlText
+			markdownText = "*" + name + "*: " + markdownText
 		}
 	}
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
-		"text":       text,
-		"parse_mode": "HTML",
+		"text":       markdownText,
+		"parse_mode": "Markdown",
 	}
 	if replyTo != nil {
 		req["reply_to_message_id"] = replyTo.ID
 	}
 	var resp Message
-	if err := rpc(ctx, ch.client, "sendMessage", req, &resp); err != nil {
+	err := rpc(ctx, ch.client, "sendMessage", req, &resp)
+	if err != nil && strings.Contains(err.Error(), "Can't parse message text") {
+		// If Telegram could not parse with Markdown, try again with HTML.
+		// Telegram is picky about Markdown meta-characters;
+		// it requires each * to have a terminating *, for example.
+		// We can reliably send using HTML, because we can simply escape it.
+		req["parse_mode"] = "HTML"
+		req["text"] = htmlText
+		err = rpc(ctx, ch.client, "sendMessage", req, &resp)
+	}
+	if err != nil {
 		return chat.Message{}, err
 	}
+
 	msg := chatMessage(ch.client, &resp)
 	if sendAs != nil {
 		msg.From = *sendAs
@@ -156,11 +171,21 @@ func (ch *channel) Edit(ctx context.Context, messageID chat.MessageID, text stri
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
 		"message_id": messageID,
-		"text":       html.EscapeString(text),
-		"parse_mode": "HTML",
+		"text":       text,
+		"parse_mode": "Markdown",
 	}
 	var resp Message
-	if err := rpc(ctx, ch.client, "editMessageText", req, &resp); err != nil {
+	err := rpc(ctx, ch.client, "editMessageText", req, &resp)
+	if err != nil && strings.Contains(err.Error(), "Can't parse message text") {
+		// If Telegram could not parse with Markdown, try again with HTML.
+		// Telegram is picky about Markdown meta-characters;
+		// it requires each * to have a terminating *, for example.
+		// We can reliably send using HTML, because we can simply escape it.
+		req["parse_mode"] = "HTML"
+		req["text"] = html.EscapeString(text)
+		err = rpc(ctx, ch.client, "editMessageText", req, &resp)
+	}
+	if err != nil {
 		return "", err
 	}
 	return chatMessageID(&resp), nil
