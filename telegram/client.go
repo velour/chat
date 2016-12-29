@@ -6,8 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"path"
 	"strconv"
 	"sync"
 	"time"
@@ -34,6 +37,7 @@ type Client struct {
 	sync.Mutex
 	channels map[int64]*channel
 	users    map[int64]*user
+	media    map[string]*media
 }
 
 type user struct {
@@ -45,6 +49,13 @@ type user struct {
 	photoTime time.Time
 }
 
+type media struct {
+	sync.Mutex
+	File
+	// Expires is the time that the URL expires.
+	expires time.Time
+}
+
 // Dial returns a new Client using the given token.
 func Dial(ctx context.Context, token string) (*Client, error) {
 	c := &Client{
@@ -53,6 +64,7 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 		close:    make(chan bool),
 		channels: make(map[int64]*channel),
 		users:    make(map[int64]*user),
+		media:    make(map[string]*media),
 	}
 	if err := rpc(ctx, c, "getMe", nil, &c.me); err != nil {
 		return nil, err
@@ -215,6 +227,79 @@ func biggestPhoto(photos []PhotoSize) string {
 		return photos[0].FileID
 	}
 	return photo
+}
+
+// ServeHTTP serves files, photos, and other media from Telegram.
+// It only handles GET requests, and
+// the final path element of the request must be a Telegram File ID.
+// The response is the corresponding file data.
+func (c *Client) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	if req.Method != http.MethodGet {
+		http.Error(w, "unsupported method", http.StatusMethodNotAllowed)
+		return
+	}
+	url, err := getMediaURL(ctx, c, path.Base(req.URL.Path))
+	if err != nil {
+		http.Error(w, "Telegram getFile failed", http.StatusBadRequest)
+		return
+	}
+	if url == "" {
+		http.Error(w, "Telegram file path missing", http.StatusBadRequest)
+		return
+	}
+	resp, err := http.Get(url)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		if data, err := ioutil.ReadAll(io.LimitReader(resp.Body, 512)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		} else {
+			http.Error(w, string(data), resp.StatusCode)
+		}
+		return
+	}
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func getMediaURL(ctx context.Context, c *Client, fileID string) (string, error) {
+	c.Lock()
+	m, ok := c.media[fileID]
+	if !ok {
+		m = new(media)
+		c.media[fileID] = m
+	}
+	m.Lock()
+	defer m.Unlock()
+	c.Unlock()
+	if !ok || time.Now().Before(m.expires) {
+		var err error
+		if m.File, err = getFile(ctx, c, fileID); err != nil {
+			return "", err
+		}
+		// The URL is valid for an hour; expire it a bit before to be safe.
+		m.expires = time.Now().Add(50 * time.Minute)
+		c.media[fileID] = m
+	}
+	var url string
+	if m.FilePath != nil {
+		url = "https://api.telegram.org/file/bot" + c.token + "/" + *m.FilePath
+	}
+	return url, nil
+}
+
+func getFile(ctx context.Context, c *Client, fileID string) (File, error) {
+	var resp File
+	req := map[string]interface{}{"file_id": fileID}
+	if err := rpc(ctx, c, "getFile", req, &resp); err != nil {
+		return File{}, err
+	}
+	return resp, nil
 }
 
 func rpc(ctx context.Context, c *Client, method string, req interface{}, resp interface{}) error {

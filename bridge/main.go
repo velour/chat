@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 
 	"github.com/eaburns/pretty"
 	"github.com/velour/chat"
@@ -23,6 +24,8 @@ var (
 	ircPass    = flag.String("irc-password", "", "The bot's IRC password")
 	ircServer  = flag.String("irc-server", "irc.freenode.net:6697", "The IRC server")
 	ircChannel = flag.String("irc-channel", "#velour-test", "The IRC channel")
+
+	httpPort = flag.String("http-port", ":8888", "The bridge's HTTP server port")
 )
 
 func main() {
@@ -46,6 +49,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	http.Handle("/telegram/media/", telegramClient)
+	go http.ListenAndServe(*httpPort, nil)
 
 	b := bridge.New(ircChannel, telegramChannel)
 	if _, err := b.Send(ctx, "Hello, World!"); err != nil {

@@ -152,7 +152,25 @@ type PhotoSize struct {
 	// Height is the photo height.
 	Height int `json:"height"`
 
-	// FileSize is the file size.
+	// FileSize is the file size, if known.
 	// TODO: what are the units, the docs don't say—bytes?
 	FileSize *int `json:"file_size"`
+}
+
+// A File represents a file.
+type File struct {
+	// FileID is the unique identifier of this file.
+	FileID string `json:"file_id"`
+
+	// FileSize is the file size, if known.
+	// TODO: what are the units, the docs don't say—bytes?
+	FileSize *int `json:"file_size"`
+
+	// FilePath is the path to the file.
+	// The bot can download the file at:
+	// https://api.telegram.org/file/bot<token>/<file_path>
+	// The link is guaranteed to be valid for 1 hour
+	// from the time that the File was returned
+	// by the getFile method.
+	FilePath *string `json:"file_path"`
 }
