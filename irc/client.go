@@ -222,9 +222,10 @@ loop:
 				continue
 			}
 			newNick := msg.Arguments[0]
-			rename := chat.Rename{Who: chatUser(msg.Origin)}
-			// Fake that the ID is their original nick, before the change.
-			rename.Who.ID = chat.UserID(newNick)
+			rename := chat.Rename{
+				From: chatUser(msg.Origin),
+				To:   chatUser(newNick),
+			}
 
 			c.Lock()
 			if newNick == c.nick {

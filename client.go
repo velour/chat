@@ -115,11 +115,12 @@ type Leave struct {
 	Who User
 }
 
-// A Rename is an event describing a user changing their Nick or Name.
+// A Rename is an event describing a user info change.
 type Rename struct {
-	// Who is the User who renamed.
-	// ID should remain the same, but Nick or Name will be the updated value.
-	Who User
+	// From is the original User information.
+	From User
+	// To is the new User information.
+	To User
 }
 
 // A UserID is a unique string representing a user.

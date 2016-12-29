@@ -214,29 +214,37 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 		return nil
 
 	case chat.Join:
+		msg := ev.Who.DisplayName() + " joined"
 		for _, ch := range b.channels {
 			if ch == event.origin {
 				continue
 			}
-			if _, err := ch.Send(ctx, ev.Who.DisplayName()+" joined"); err != nil {
+			if _, err := ch.Send(ctx, msg); err != nil {
 				log.Printf("Failed to send join message to %s: %s\n", ch, err)
 			}
 		}
 	case chat.Leave:
+		msg := ev.Who.DisplayName() + " left"
 		for _, ch := range b.channels {
 			if ch == event.origin {
 				continue
 			}
-			if _, err := ch.Send(ctx, ev.Who.DisplayName()+" left"); err != nil {
+			if _, err := ch.Send(ctx, msg); err != nil {
 				log.Printf("Failed to send leave message to %s: %s\n", ch, err)
 			}
 		}
 	case chat.Rename:
+		old := ev.From.DisplayName()
+		new := ev.To.DisplayName()
+		if old == new {
+			break
+		}
+		msg := old + " renamed to " + new
 		for _, ch := range b.channels {
 			if ch == event.origin {
 				continue
 			}
-			if _, err := ch.Send(ctx, ev.Who.DisplayName()+" changed their name"); err != nil {
+			if _, err := ch.Send(ctx, msg); err != nil {
 				log.Printf("Failed to send rename message: %s\n", err)
 			}
 		}
