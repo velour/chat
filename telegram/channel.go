@@ -233,7 +233,7 @@ func chatUser(c *Client, user *User) chat.User {
 	c.Lock()
 	if u, ok := c.users[user.ID]; c.localURL != nil && ok {
 		u.Lock()
-		newURL, _ = url.Parse(c.LocalURL.String())
+		newURL, _ := url.Parse(c.localURL.String())
 		newURL.Path = path.Join(newURL.Path, u.photo)
 		photoURL = newURL.String()
 		u.Unlock()
