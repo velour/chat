@@ -4,6 +4,7 @@ import (
 	"context"
 	"html"
 	"io"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -228,14 +229,13 @@ func chatUser(c *Client, user *User) chat.User {
 		nick = name
 	}
 
-	var url string
+	var photoURL string
 	c.Lock()
 	if u, ok := c.users[user.ID]; c.localURL != nil && ok {
 		u.Lock()
-		newPath := path.Join(c.localURL.Path, u.photo)
-		localURL := c.localURL
-		localURL.Path = newPath
-		url = localURL.String()
+		newURL, _ = url.Parse(c.LocalURL.String())
+		newURL.Path = path.Join(newURL.Path, u.photo)
+		photoURL = newURL.String()
 		u.Unlock()
 	}
 	c.Unlock()
@@ -244,6 +244,6 @@ func chatUser(c *Client, user *User) chat.User {
 		ID:       chat.UserID(strconv.FormatInt(user.ID, 10)),
 		Nick:     nick,
 		Name:     name,
-		PhotoURL: url,
+		PhotoURL: photoURL,
 	}
 }
