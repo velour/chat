@@ -39,43 +39,57 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	ircClient, err := irc.DialSSL(ctx, *ircServer, *ircNick, *ircNick, *ircPass, false)
-	if err != nil {
-		panic(err)
-	}
-	ircChannel, err := ircClient.Join(ctx, *ircChannel)
-	if err != nil {
-		panic(err)
+	channels := []chat.Channel{}
+
+	if *ircNick != "" {
+		ircClient, err := irc.DialSSL(ctx, *ircServer, *ircNick, *ircNick, *ircPass, false)
+		if err != nil {
+			panic(err)
+		}
+		ircChannel, err := ircClient.Join(ctx, *ircChannel)
+		if err != nil {
+			panic(err)
+		}
+
+		channels = append(channels, ircChannel)
 	}
 
-	telegramClient, err := telegram.Dial(ctx, *telegramToken)
-	if err != nil {
-		panic(err)
-	}
-	telegramChannel, err := telegramClient.Join(ctx, *telegramGroup)
-	if err != nil {
-		panic(err)
+	if *telegramToken != "" {
+		telegramClient, err := telegram.Dial(ctx, *telegramToken)
+		if err != nil {
+			panic(err)
+		}
+		telegramChannel, err := telegramClient.Join(ctx, *telegramGroup)
+		if err != nil {
+			panic(err)
+		}
+
+		const telegramMediaPath = "/telegram/media/"
+		http.Handle(telegramMediaPath, telegramClient)
+		telegramClient.SetLocalURL(url.URL{
+			Scheme: "http",
+			Host:   "localhost" + *httpPort,
+			Path:   telegramMediaPath,
+		})
+		go http.ListenAndServe(*httpPort, nil)
+
+		channels = append(channels, telegramChannel)
 	}
 
-	const telegramMediaPath = "/telegram/media/"
-	http.Handle(telegramMediaPath, telegramClient)
-	telegramClient.SetLocalURL(url.URL{
-		Scheme: "http",
-		Host:   "localhost" + *httpPort,
-		Path:   telegramMediaPath,
-	})
-	go http.ListenAndServe(*httpPort, nil)
+	if *slackToken != "" {
+		slackClient, err := slack.Dial(ctx, *slackToken)
+		if err != nil {
+			panic(err)
+		}
+		slackChannel, err := slackClient.Join(ctx, *slackRoom)
+		if err != nil {
+			panic(err)
+		}
 
-	slackClient, err := slack.Dial(ctx, *slackToken)
-	if err != nil {
-		panic(err)
-	}
-	slackChannel, err := slackClient.Join(ctx, *slackRoom)
-	if err != nil {
-		panic(err)
+		channels = append(channels, slackChannel)
 	}
 
-	b := bridge.New(ircChannel, telegramChannel, slackChannel)
+	b := bridge.New(channels...)
 	log.Println("Bridge is up and running.")
 	if _, err := b.Send(ctx, "Hello, World!"); err != nil {
 		panic(err)
