@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 
 	"github.com/eaburns/pretty"
 	"github.com/velour/chat"
@@ -32,7 +33,8 @@ var (
 	slackToken = flag.String("slack-token", "", "The bot's Slack token")
 	slackRoom  = flag.String("slack-room", "", "The bot's slack room name (not ID)")
 
-	httpPort = flag.String("http-port", ":8888", "The bridge's HTTP server port")
+	httpPublic = flag.String("http-public", "localhost:8888", "The bridge's public base URL")
+	httpServe  = flag.String("http-serve", "localhost:8888", "The bridge's HTTP server host")
 )
 
 func main() {
@@ -66,12 +68,13 @@ func main() {
 
 		const telegramMediaPath = "/telegram/media/"
 		http.Handle(telegramMediaPath, telegramClient)
-		telegramClient.SetLocalURL(url.URL{
-			Scheme: "http",
-			Host:   "localhost" + *httpPort,
-			Path:   telegramMediaPath,
-		})
-		go http.ListenAndServe(*httpPort, nil)
+		baseURL, err := url.Parse(*httpPublic)
+		if err != nil {
+			panic(err)
+		}
+		baseURL.Path = path.Join(baseURL.Path, telegramMediaPath)
+		telegramClient.SetLocalURL(*baseURL)
+		go http.ListenAndServe(*httpServe, nil)
 
 		channels = append(channels, telegramChannel)
 	}
