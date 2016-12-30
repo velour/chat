@@ -99,6 +99,7 @@ func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 	if sendAs != nil {
 		args = append(args, "username="+sendAs.DisplayName())
 		args = append(args, "as_user=false")
+		args = append(args, "icon_url="+sendAs.PhotoURL)
 	}
 
 	var resp Update
