@@ -22,9 +22,10 @@ var _ chat.Client = &Client{}
 
 // A Client is a client's connection to an IRC server.
 type Client struct {
-	conn  net.Conn
-	in    *bufio.Reader
-	error chan error
+	server string
+	conn   net.Conn
+	in     *bufio.Reader
+	error  chan error
 
 	sync.Mutex
 	nick     string
@@ -38,7 +39,7 @@ func Dial(ctx context.Context, server, nick, fullname, pass string) (*Client, er
 	if err != nil {
 		return nil, err
 	}
-	return dial(ctx, c, nick, fullname, pass)
+	return dial(ctx, c, server, nick, fullname, pass)
 }
 
 // DialSSL connects to a remote IRC server using SSL.
@@ -52,11 +53,12 @@ func DialSSL(ctx context.Context, server, nick, fullname, pass string, trust boo
 	if err != nil {
 		return nil, err
 	}
-	return dial(ctx, c, nick, fullname, pass)
+	return dial(ctx, c, server, nick, fullname, pass)
 }
 
-func dial(ctx context.Context, conn net.Conn, nick, fullname, pass string) (*Client, error) {
+func dial(ctx context.Context, conn net.Conn, server, nick, fullname, pass string) (*Client, error) {
 	c := &Client{
+		server:   server,
 		conn:     conn,
 		in:       bufio.NewReader(conn),
 		error:    make(chan error),

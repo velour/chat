@@ -25,6 +25,8 @@ var (
 	api = url.URL{Scheme: "https", Host: "slack.com", Path: "/api"}
 )
 
+var _ chat.Client = &Client{}
+
 // A Client represents a connection to the slack API.
 type Client struct {
 	token   string
@@ -124,7 +126,7 @@ func (c *Client) join(channel string) (Channel, error) {
 		return Channel{}, err
 	}
 	for _, ch := range channels {
-		if ch.Name == channel || ch.ID == channel {
+		if ch.Name() == channel || ch.ID == channel {
 			c.channels[ch.ID] = ch // use ID b/c other incoming messages will do so
 			return ch, nil
 		}
@@ -132,7 +134,7 @@ func (c *Client) join(channel string) (Channel, error) {
 	return Channel{}, errors.New("Channel not found")
 }
 
-func (c *Client) Join(ctx context.Context, channel string) (Channel, error) {
+func (c *Client) Join(ctx context.Context, channel string) (chat.Channel, error) {
 	return c.join(channel)
 }
 

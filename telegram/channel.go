@@ -50,6 +50,15 @@ func newChannel(client *Client, chat Chat) *channel {
 	return ch
 }
 
+func (ch *channel) Name() string {
+	if ch.chat.Title != nil {
+		return *ch.chat.Title
+	}
+	return ""
+}
+
+func (ch *channel) ServiceName() string { return "Telegram" }
+
 func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 	for {
 		select {

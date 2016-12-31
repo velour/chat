@@ -67,6 +67,9 @@ func newChannel(client *Client, name string) *channel {
 	return ch
 }
 
+func (ch *channel) Name() string        { return ch.name }
+func (ch *channel) ServiceName() string { return "IRC (" + ch.client.server + ")" }
+
 func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 	select {
 	case <-ctx.Done():

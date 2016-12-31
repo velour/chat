@@ -19,6 +19,15 @@ type Client interface {
 
 // A Channel is a handle to a channel joined by the Client.
 type Channel interface {
+	// Name returns the Channel's name.
+	Name() string
+
+	// ServiceName returns the name of the Channel's chat service.
+	// This can be, a service name like "Telegram",
+	// or a name and address like "IRC (irc.freenode.net)",
+	// or anything useful to distinguish the service from others.
+	ServiceName() string
+
 	// Receive receives the next event from the Channel.
 	Receive(ctx context.Context) (interface{}, error)
 

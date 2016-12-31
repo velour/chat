@@ -94,6 +94,10 @@ func main() {
 
 	b := bridge.New(channels...)
 	log.Println("Bridge is up and running.")
+	log.Println("Connecting:")
+	for _, ch := range channels {
+		log.Println(ch.Name(), "on", ch.ServiceName())
+	}
 	if _, err := b.Send(ctx, "Hello, World!"); err != nil {
 		panic(err)
 	}

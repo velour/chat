@@ -103,6 +103,9 @@ func New(channels ...chat.Channel) *Bridge {
 	return b
 }
 
+func (b *Bridge) Name() string        { return "bridge" }
+func (b *Bridge) ServiceName() string { return "bridge" }
+
 // Closes stops bridging the channels, closes the bridge.
 func (b *Bridge) Close(context.Context) error {
 	close(b.closed)

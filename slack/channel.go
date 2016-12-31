@@ -14,8 +14,8 @@ import (
 type Channel struct {
 	ID string `json:"id"`
 
-	// Name is the name of the channel WITHOUT a leading #.
-	Name string `json:"name"`
+	// ChannelName is the name of the channel WITHOUT a leading #.
+	ChannelName string `json:"name"`
 
 	client *Client
 	in     chan []*Update
@@ -24,7 +24,7 @@ type Channel struct {
 
 // makeChannel creates a new channel
 func makeChannel(c *Client, id, name string) Channel {
-	return makeChannelFromChannel(c, Channel{ID: id, Name: name})
+	return makeChannelFromChannel(c, Channel{ID: id, ChannelName: name})
 }
 
 // makeChannelFromChannel fills in an empty channel's privates
@@ -44,6 +44,9 @@ func makeChannelFromChannel(c *Client, ch Channel) Channel {
 	}()
 	return ch
 }
+
+func (ch Channel) Name() string        { return ch.ChannelName }
+func (ch Channel) ServiceName() string { return "Slack" }
 
 func (ch Channel) Receive(ctx context.Context) (interface{}, error) {
 	for {
