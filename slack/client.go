@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"path"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -306,8 +308,38 @@ func (c *Client) do(resp interface{}, method string, args ...string) error {
 	u.RawQuery = vals.Encode()
 	httpResp, err := http.Get(u.String())
 	if err != nil {
+		log.Printf("Slack RPC %s %+v failed: %s\n", method, args, err)
 		return err
 	}
 	defer httpResp.Body.Close()
-	return json.NewDecoder(httpResp.Body).Decode(resp)
+	if err = json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
+		return err
+	}
+	logResponseError(method, args, resp)
+	return nil
+}
+
+func logResponseError(method string, args []string, resp interface{}) {
+	v := reflect.ValueOf(resp)
+	if v.Type().Kind() != reflect.Ptr {
+		return
+	}
+	v = v.Elem()
+	if v.Type().Kind() != reflect.Struct {
+		return
+	}
+	z := reflect.Value{}
+	respValue := v.FieldByName("Response")
+	if respValue == z || respValue.Type().Kind() != reflect.Struct {
+		return
+	}
+	okValue := respValue.FieldByName("OK")
+	if okValue == z || okValue.Type().Kind() != reflect.Bool || okValue.Bool() {
+		return
+	}
+	errValue := respValue.FieldByName("Error")
+	if errValue == z || errValue.Type().Kind() != reflect.String {
+		return
+	}
+	log.Printf("Slack RPC %s %+v failed: %s\n", method, args, errValue.String())
 }
