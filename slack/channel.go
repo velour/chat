@@ -117,7 +117,7 @@ func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 
 	var resp struct {
 		ResponseError
-		ID string
+		TS string `json:"ts"` // message timestamp
 	}
 	err := ch.client.do(&resp, "chat.postMessage", args...)
 	if err != nil {
@@ -127,7 +127,7 @@ func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 		return chat.Message{}, resp
 	}
 
-	id := chat.MessageID(resp.ID)
+	id := chat.MessageID(resp.TS)
 	msg := chat.Message{
 		ID:   id,
 		From: *sendAs,
