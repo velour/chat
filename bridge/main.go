@@ -33,7 +33,7 @@ var (
 	slackToken = flag.String("slack-token", "", "The bot's Slack token")
 	slackRoom  = flag.String("slack-room", "", "The bot's slack room name (not ID)")
 
-	httpPublic = flag.String("http-public", "localhost:8888", "The bridge's public base URL")
+	httpPublic = flag.String("http-public", "http://localhost:8888", "The bridge's public base URL")
 	httpServe  = flag.String("http-serve", "localhost:8888", "The bridge's HTTP server host")
 )
 
