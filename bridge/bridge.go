@@ -14,6 +14,7 @@ package bridge
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"strconv"
@@ -218,7 +219,8 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 			}
 			var err error
 			if err = ch.Delete(ctx, msg.ID); err != nil {
-				return err
+				return fmt.Errorf("failed to send delete to %s on %s: %s",
+					ch.Name(), ch.ServiceName(), err)
 			}
 		}
 
@@ -235,7 +237,8 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 			}
 			var err error
 			if msg.ID, err = ch.Edit(ctx, msg.ID, ev.Text); err != nil {
-				return err
+				return fmt.Errorf("failed to send edit to %s on %s: %s",
+					ch.Name(), ch.ServiceName(), err)
 			}
 		}
 
@@ -254,7 +257,8 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 				continue
 			}
 			if _, err := ch.Send(ctx, msg); err != nil {
-				log.Printf("Failed to send join message to %s: %s\n", ch, err)
+				log.Printf("Failed to send join message to %s on %s: %s\n",
+					ch.Name(), ch.ServiceName(), err)
 			}
 		}
 	case chat.Leave:
@@ -264,7 +268,8 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 				continue
 			}
 			if _, err := ch.Send(ctx, msg); err != nil {
-				log.Printf("Failed to send leave message to %s: %s\n", ch, err)
+				log.Printf("Failed to send leave message to %s on %s: %s\n",
+					ch.Name(), ch.ServiceName(), err)
 			}
 		}
 	case chat.Rename:
@@ -279,7 +284,8 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 				continue
 			}
 			if _, err := ch.Send(ctx, msg); err != nil {
-				log.Printf("Failed to send rename message: %s\n", err)
+				log.Printf("Failed to send rename message to %s on %s: %s\n",
+					ch.Name(), ch.ServiceName(), err)
 			}
 		}
 	}
@@ -333,7 +339,7 @@ func send(ctx context.Context, b *Bridge, origin chat.Channel, sendAs *chat.User
 			m, err = ch.SendAs(ctx, *sendAs, text)
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to send mesage to %s on %s: %s", ch.Name(), ch.ServiceName(), err)
 		}
 		entry.copies = append(entry.copies, message{to: ch, msg: m})
 	}
@@ -416,7 +422,7 @@ func reply(ctx context.Context, b *Bridge, origin chat.Channel, sendAs *chat.Use
 			m, err = ch.SendAs(ctx, *sendAs, text)
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to send reply to %s on %s: %s", ch.Name(), ch.ServiceName(), err)
 		}
 		entry.copies = append(entry.copies, message{to: ch, msg: m})
 	}
