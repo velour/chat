@@ -321,6 +321,9 @@ func rpc(ctx context.Context, c *Client, method string, req interface{}, resp in
 	case <-ctx.Done():
 		return ctx.Err()
 	case err := <-err:
+		if err != nil {
+			log.Printf("Telegram RPC %s %+v failed: %s\n", method, req, err)
+		}
 		return err
 	}
 }
