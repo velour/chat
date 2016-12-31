@@ -325,7 +325,7 @@ loop:
 }
 
 func chatUser(nick string) chat.User {
-	return chat.User{ID: chat.UserID(nick), Nick: nick, Name: nick}
+	return chat.User{ID: chat.UserID(nick), Nick: nick, DisplayName: nick}
 }
 
 func sendEvent(c *Client, channelName string, msg *Message, event interface{}) {

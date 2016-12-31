@@ -214,7 +214,7 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 		return nil
 
 	case chat.Join:
-		msg := ev.Who.DisplayName() + " joined"
+		msg := ev.Who.Name() + " joined"
 		for _, ch := range b.channels {
 			if ch == event.origin {
 				continue
@@ -224,7 +224,7 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 			}
 		}
 	case chat.Leave:
-		msg := ev.Who.DisplayName() + " left"
+		msg := ev.Who.Name() + " left"
 		for _, ch := range b.channels {
 			if ch == event.origin {
 				continue
@@ -234,8 +234,8 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 			}
 		}
 	case chat.Rename:
-		old := ev.From.DisplayName()
-		new := ev.To.DisplayName()
+		old := ev.From.Name()
+		new := ev.To.Name()
 		if old == new {
 			break
 		}
@@ -269,9 +269,10 @@ func me(b *Bridge) chat.User {
 	// TODO: use a more informative bridge User.
 	// Option: get the User info from channels[0].
 	return chat.User{
-		ID:   chat.UserID("bridge"),
-		Nick: "bridge",
-		Name: "bridge",
+		ID:          chat.UserID("bridge"),
+		Nick:        "bridge",
+		FullName:    "bridge",
+		DisplayName: "bridge",
 	}
 }
 

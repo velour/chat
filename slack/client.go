@@ -278,10 +278,11 @@ func (c *Client) getUser(id chat.UserID) (chat.User, error) {
 	}
 
 	c.users[id] = chat.User{
-		ID:       id,
-		Nick:     resp.User.Name,
-		Name:     resp.User.Profile.RealName,
-		PhotoURL: resp.User.Profile.Image,
+		ID:          id,
+		Nick:        resp.User.Name,
+		FullName:    resp.User.Profile.RealName,
+		DisplayName: resp.User.Name,
+		PhotoURL:    resp.User.Profile.Image,
 	}
 
 	return c.users[id], nil

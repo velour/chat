@@ -134,23 +134,33 @@ type User struct {
 	// Nick is the user's nickname.
 	Nick string
 
-	// Name is the user's full name.
-	Name string
+	// FullName is the user's full name.
+	FullName string
+
+	// DisplayName is the preferred display name for a user.
+	//
+	// Different chat services have different preferences
+	// for whether they display the user's ID, nick, full name,
+	// or something else.
+	// That preference should be reflected in this field.
+	DisplayName string
 
 	// PhotoURL, if non-empty, is the URL to the User's profile photo.
 	PhotoURL string
 }
 
-// DisplayName returns a name for the User that is suitable for display.
-func (u User) DisplayName() string {
-	if u.Name != "" {
-		return u.Name
-	}
-	if u.Nick != "" {
+// Name returns a name for the User that is suitable for display.
+func (u User) Name() string {
+	switch {
+	case u.DisplayName != "":
+		return u.DisplayName
+	case u.Nick != "":
 		return u.Nick
-	}
-	if u.ID != "" {
+	case u.FullName != "":
+		return u.FullName
+	case u.ID != "":
 		return string(u.ID)
+	default:
+		return "unknown"
 	}
-	return "unknown"
 }

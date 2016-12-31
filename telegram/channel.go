@@ -118,7 +118,7 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, replyTo *chat.Me
 	htmlText := html.EscapeString(text)
 	if sendAs != nil {
 		const mePrefix = "/me "
-		name := sendAs.DisplayName()
+		name := sendAs.Name()
 		if strings.HasPrefix(text, mePrefix) {
 			htmlText = "<b>" + name + "</b> " + strings.TrimPrefix(htmlText, mePrefix)
 			markdownText = "*" + name + "* " + strings.TrimPrefix(markdownText, mePrefix)
@@ -241,9 +241,10 @@ func chatUser(c *Client, user *User) chat.User {
 	c.Unlock()
 
 	return chat.User{
-		ID:       chat.UserID(strconv.FormatInt(user.ID, 10)),
-		Nick:     nick,
-		Name:     name,
-		PhotoURL: photoURL,
+		ID:          chat.UserID(strconv.FormatInt(user.ID, 10)),
+		Nick:        nick,
+		FullName:    name,
+		DisplayName: name,
+		PhotoURL:    photoURL,
 	}
 }

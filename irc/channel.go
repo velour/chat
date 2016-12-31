@@ -87,9 +87,9 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, linePrefix, text
 	if sendAs != nil {
 		if strings.HasPrefix(text, mePrefix) {
 			text = strings.TrimPrefix(text, mePrefix)
-			prefix = "*" + sendAs.DisplayName() + " "
+			prefix = "*" + sendAs.Name() + " "
 		} else {
-			prefix = "<" + sendAs.DisplayName() + "> "
+			prefix = "<" + sendAs.Name() + "> "
 		}
 	} else if strings.HasPrefix(text, mePrefix) {
 		text = strings.TrimPrefix(text, mePrefix)
@@ -130,7 +130,7 @@ func (c *channel) Edit(_ context.Context, id chat.MessageID, _ string) (chat.Mes
 }
 
 func (ch *channel) reply(ctx context.Context, sendAs *chat.User, replyTo chat.Message, text string) (chat.Message, error) {
-	quote := replyTo.From.DisplayName() + "> "
+	quote := replyTo.From.Name() + "> "
 	if _, err := ch.send(ctx, sendAs, quote, replyTo.Text); err != nil {
 		return chat.Message{}, nil
 	}
