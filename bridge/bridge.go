@@ -195,6 +195,7 @@ func logMessage(b *Bridge, entry *logEntry) {
 }
 
 func relay(ctx context.Context, b *Bridge, event event) error {
+	origName := event.origin.Name() + " on " + event.origin.ServiceName()
 	switch ev := event.what.(type) {
 	case chat.Message:
 		entry, err := send(ctx, b, event.origin, &ev.From, ev.Text)
@@ -247,7 +248,7 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 		return nil
 
 	case chat.Join:
-		msg := ev.Who.Name() + " joined"
+		msg := ev.Who.Name() + " joined " + origName
 		for _, ch := range b.channels {
 			if ch == event.origin {
 				continue
@@ -257,7 +258,7 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 			}
 		}
 	case chat.Leave:
-		msg := ev.Who.Name() + " left"
+		msg := ev.Who.Name() + " left " + origName
 		for _, ch := range b.channels {
 			if ch == event.origin {
 				continue
@@ -272,7 +273,7 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 		if old == new {
 			break
 		}
-		msg := old + " renamed to " + new
+		msg := old + " renamed to " + new + " in " + origName
 		for _, ch := range b.channels {
 			if ch == event.origin {
 				continue
