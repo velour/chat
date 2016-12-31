@@ -92,6 +92,11 @@ func (ch *Channel) chatMessage(msg *Update) (interface{}, error) {
 
 // Send sends text to the Channel and returns the sent Message.
 func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (chat.Message, error) {
+	// Do not attempt to send empty messages
+	// TODO(cws): make bridge just not crash when errors come back from Send/SendAs)
+	if text == "" {
+		return chat.Message{}, nil
+	}
 	args := []string{
 		"channel=" + ch.ID,
 		"text=" + text,
@@ -100,22 +105,26 @@ func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 		args = append(args, "username="+sendAs.DisplayName())
 		args = append(args, "as_user=false")
 		args = append(args, "icon_url="+sendAs.PhotoURL)
+	} else {
+		sendAs = &chat.User{}
 	}
 
-	var resp Update
+	var resp struct {
+		ResponseError
+		ID string
+	}
 	err := ch.client.do(&resp, "chat.postMessage", args...)
 	if err != nil {
 		return chat.Message{}, err
 	}
+	if !resp.OK {
+		return chat.Message{}, resp
+	}
 
 	id := chat.MessageID(resp.ID)
 	msg := chat.Message{
-		ID: id,
-		From: chat.User{
-			ID:   "test",
-			Nick: "test",
-			Name: "test",
-		},
+		ID:   id,
+		From: *sendAs,
 		Text: text,
 	}
 

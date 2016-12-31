@@ -17,8 +17,9 @@ type Message struct {
 	IconEmoji   string   `json:"icon_emoji"`
 }
 
-// Update represents a slack RTM update message
+// Update represents a slack update message
 type Update struct {
+	ResponseError
 	ID      uint64      `json:"id"`
 	Type    string      `json:"type"`
 	SubType string      `json:"subtype"`
