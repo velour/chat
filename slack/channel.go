@@ -3,6 +3,7 @@ package slack
 import (
 	"context"
 	"fmt"
+	"html"
 	"io"
 	"strings"
 
@@ -88,7 +89,7 @@ func (ch *Channel) chatMessage(msg *Update) (interface{}, error) {
 		ID: chat.MessageID(msg.Ts),
 		// TODO(cws): cache slack users/nicks
 		From: user,
-		Text: msg.Text,
+		Text: html.UnescapeString(msg.Text),
 	}, nil
 }
 
