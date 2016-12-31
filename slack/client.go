@@ -31,6 +31,7 @@ var _ chat.Client = &Client{}
 type Client struct {
 	token   string
 	id      string
+	domain  string
 	me      User
 	webSock *websocket.Conn
 	done    chan chan<- error
@@ -58,6 +59,9 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 		Self struct {
 			ID string `json:"id"`
 		} `json:"self"`
+		Team struct {
+			Domain string `json:"domain"`
+		} `json:"team"`
 	}
 	if err := c.do(&resp, "rtm.start"); err != nil {
 		return nil, err
@@ -71,6 +75,7 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 	}
 	c.webSock = webSock
 	c.id = resp.Self.ID
+	c.domain = resp.Team.Domain
 
 	event, err := c.next()
 	if err != nil {

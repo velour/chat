@@ -46,7 +46,7 @@ func makeChannelFromChannel(c *Client, ch Channel) Channel {
 }
 
 func (ch Channel) Name() string        { return ch.ChannelName }
-func (ch Channel) ServiceName() string { return "Slack" }
+func (ch Channel) ServiceName() string { return ch.client.domain + ".slack.com" }
 
 func (ch Channel) Receive(ctx context.Context) (interface{}, error) {
 	for {
