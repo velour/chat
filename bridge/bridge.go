@@ -202,9 +202,39 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 		return nil
 
 	case chat.Delete:
-		// TODO
+		editLog := findLogEntry(b, event.origin, ev.ID)
+		for _, ch := range b.channels {
+			if ch == event.origin {
+				continue
+			}
+			msg := findCopy(editLog, ch)
+			if msg == nil {
+				log.Printf("edited message: not found\n")
+				continue
+			}
+			var err error
+			if err = ch.Delete(ctx, msg.ID); err != nil {
+				return err
+			}
+		}
+
 	case chat.Edit:
-		// TODO
+		editLog := findLogEntry(b, event.origin, ev.ID)
+		for _, ch := range b.channels {
+			if ch == event.origin {
+				continue
+			}
+			msg := findCopy(editLog, ch)
+			if msg == nil {
+				log.Printf("edited message: not found\n")
+				continue
+			}
+			var err error
+			if msg.ID, err = ch.Edit(ctx, msg.ID, ev.Text); err != nil {
+				return err
+			}
+		}
+
 	case chat.Reply:
 		entry, err := reply(ctx, b, event.origin, &ev.Reply.From, ev.ReplyTo, ev.Reply.Text)
 		if err != nil {
@@ -335,10 +365,10 @@ func (b *Bridge) Edit(_ context.Context, id chat.MessageID, _ string) (chat.Mess
 	return id, nil
 }
 
-func findLogEntry(b *Bridge, origin chat.Channel, msg *chat.Message) *logEntry {
+func findLogEntry(b *Bridge, origin chat.Channel, id chat.MessageID) *logEntry {
 	for _, m := range b.log {
 		for _, c := range m.copies {
-			if c.to == origin && c.msg.ID == msg.ID {
+			if c.to == origin && c.msg.ID == id {
 				return m
 			}
 		}
@@ -364,7 +394,7 @@ func findCopy(log *logEntry, ch chat.Channel) *chat.Message {
 // this is treated as a normal send instead of a reply.
 func reply(ctx context.Context, b *Bridge, origin chat.Channel, sendAs *chat.User, replyTo chat.Message, text string) (*logEntry, error) {
 	entry := &logEntry{origin: origin}
-	replyToLog := findLogEntry(b, origin, &replyTo)
+	replyToLog := findLogEntry(b, origin, replyTo.ID)
 	for _, ch := range b.channels {
 		var err error
 		var m chat.Message
