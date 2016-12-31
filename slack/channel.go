@@ -2,7 +2,9 @@ package slack
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"strings"
 
 	"github.com/velour/chat"
 )
@@ -97,6 +99,9 @@ func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 	if text == "" {
 		return chat.Message{}, nil
 	}
+
+	text = filterOutgoing(text)
+
 	args := []string{
 		"channel=" + ch.ID,
 		"text=" + text,
@@ -129,6 +134,15 @@ func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 	}
 
 	return msg, err
+}
+
+// filterOutgoing checks an outgoing Slack message body for network conversion issues
+func filterOutgoing(text string) string {
+	if strings.HasPrefix(text, "/me ") {
+		text = strings.TrimPrefix(text, "/me ")
+		text = fmt.Sprintf("_%s_", text)
+	}
+	return text
 }
 
 func (ch Channel) Send(ctx context.Context, text string) (chat.Message, error) {
