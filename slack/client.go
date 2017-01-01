@@ -32,7 +32,12 @@ type Client struct {
 	domain  string
 	me      User
 	webSock *websocket.Conn
-	done    chan chan<- error
+
+	pingError chan error
+	pollError chan error
+
+	// cancel cancels the background goroutines.
+	cancel context.CancelFunc
 
 	users    map[chat.UserID]chat.User
 	channels map[string]Channel
@@ -45,10 +50,11 @@ type Client struct {
 // and automatically sends pings.
 func Dial(ctx context.Context, token string) (*Client, error) {
 	c := &Client{
-		token:    token,
-		done:     make(chan chan<- error),
-		channels: make(map[string]Channel),
-		users:    make(map[chat.UserID]chat.User),
+		token:     token,
+		pingError: make(chan error, 1),
+		pollError: make(chan error, 1),
+		channels:  make(map[string]Channel),
+		users:     make(map[chat.UserID]chat.User),
 	}
 
 	var resp struct {
@@ -79,40 +85,34 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 		return nil, fmt.Errorf("expected hello, got %v", event)
 	}
 
-	go ping(c)
-	go poll(c)
+	bkg := context.Background()
+	bkg, c.cancel = context.WithCancel(bkg)
+	go ping(bkg, c)
+	go poll(bkg, c)
 
 	return c, nil
 }
 
-func ping(c *Client) {
-	ctx := context.Background()
-	ticker := time.NewTicker(10 * time.Second)
-	for {
-		select {
-		case ch := <-c.done:
-			ticker.Stop()
-			ch <- c.webSock.Close()
-			return
-		case <-ticker.C:
-			if err := c.send(ctx, map[string]interface{}{"type": "ping"}); err != nil {
-				ticker.Stop()
-				c.webSock.Close()
-				<-c.done <- fmt.Errorf("failed to send ping: %v", err)
-				return
-			}
-		}
-	}
-}
-
 // Close ends the Slack client connection
 func (c *Client) Close(_ context.Context) error {
-	for _, ch := range c.channels {
-		close(ch.in)
+	// Cancel the background goroutines,
+	// and wait for them to finish
+	// before closing the socket.
+	c.cancel()
+	pollError := <-c.pollError
+	pingError := <-c.pingError
+	closeError := c.webSock.Close()
+
+	switch {
+	case closeError != nil:
+		return closeError
+	case pollError != nil:
+		return pollError
+	case pingError != nil:
+		return pingError
+	default:
+		return nil
 	}
-	ch := make(chan error)
-	c.done <- ch
-	return <-ch
 }
 
 // Join returns a Channel for a Slack connection
@@ -138,14 +138,40 @@ func (c *Client) Join(ctx context.Context, channel string) (chat.Channel, error)
 	return c.join(ctx, channel)
 }
 
-func poll(c *Client) {
-	ctx := context.Background()
+func ping(ctx context.Context, c *Client) {
+	defer c.cancel()
+	defer close(c.pingError)
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
 	for {
-		msg, err := c.next(ctx)
-		if err != nil {
+		select {
+		case <-ctx.Done():
 			return
+		case <-ticker.C:
+			if err := c.send(ctx, map[string]interface{}{"type": "ping"}); err != nil {
+				c.pingError <- err
+				return
+			}
 		}
-		if msg.Type == "message" {
+	}
+}
+
+func poll(ctx context.Context, c *Client) {
+	defer c.cancel()
+	defer close(c.pollError)
+	defer func() {
+		for _, ch := range c.channels {
+			close(ch.in)
+		}
+	}()
+	for {
+		switch msg, err := c.next(ctx); {
+		case err == context.DeadlineExceeded || err == context.Canceled:
+			return
+		case err != nil:
+			c.pollError <- err
+			return
+		case msg.Type == "message":
 			c.update(ctx, msg)
 		}
 	}
