@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/velour/chat"
 )
@@ -88,12 +90,41 @@ func (ch *Channel) chatMessage(ctx context.Context, msg *Update) (interface{}, e
 	if err != nil {
 		return nil, err
 	}
-	return chat.Message{
-		ID: chat.MessageID(msg.Ts),
-		// TODO(cws): cache slack users/nicks
-		From: user,
-		Text: html.UnescapeString(msg.Text),
-	}, nil
+	id := chat.MessageID(msg.Ts)
+	text := html.UnescapeString(msg.Text)
+
+	for _, m := range mentions(text) {
+		u, err := ch.client.getUser(ctx, chat.UserID(m))
+		if err != nil {
+			log.Printf("Failed to lookup mention user %s: %s\n", m, err)
+			continue
+		}
+		text = strings.Replace(text, "<@"+m+">", "@"+u.Name(), -1)
+	}
+
+	return chat.Message{ID: id, From: user, Text: text}, nil
+}
+
+func mentions(txt string) []string {
+	var mentions []string
+	for len(txt) > 0 {
+		r, i := utf8.DecodeRuneInString(txt)
+		txt = txt[i:]
+		if r == '<' && len(txt) > 0 && txt[0] == '@' {
+			txt = txt[1:] // chomp '@'
+			var mention []rune
+			for len(txt) > 0 {
+				r, i := utf8.DecodeRuneInString(txt)
+				txt = txt[i:]
+				if r == '>' {
+					break
+				}
+				mention = append(mention, r)
+			}
+			mentions = append(mentions, string(mention))
+		}
+	}
+	return mentions
 }
 
 // Send sends text to the Channel and returns the sent Message.
