@@ -14,6 +14,7 @@ package bridge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -108,9 +109,13 @@ func (b *Bridge) Name() string        { return "bridge" }
 func (b *Bridge) ServiceName() string { return "bridge" }
 
 // Closes stops bridging the channels, closes the bridge.
-func (b *Bridge) Close(context.Context) error {
+func (b *Bridge) Close(ctx context.Context) error {
 	close(b.closed)
-	return <-b.closeError
+	err := <-b.closeError
+	if err == io.EOF {
+		err = errors.New("unexpected EOF")
+	}
+	return err
 }
 
 type event struct {

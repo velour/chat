@@ -48,6 +48,11 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		defer func() {
+			if err := ircClient.Close(ctx); err != nil {
+				panic(err)
+			}
+		}()
 		ircChannel, err := ircClient.Join(ctx, *ircChannel)
 		if err != nil {
 			panic(err)
@@ -61,6 +66,11 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		defer func() {
+			if err := telegramClient.Close(ctx); err != nil {
+				panic(err)
+			}
+		}()
 		telegramChannel, err := telegramClient.Join(ctx, *telegramGroup)
 		if err != nil {
 			panic(err)
@@ -84,6 +94,11 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		defer func() {
+			if err := slackClient.Close(ctx); err != nil {
+				panic(err)
+			}
+		}()
 		slackChannel, err := slackClient.Join(ctx, *slackRoom)
 		if err != nil {
 			panic(err)

@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	longPollSeconds    = 100
 	minPhotoUpdateTime = 30 * time.Minute
 	megabyte           = 1000000
 	// Telegram's filesize limit for bots is 20 megabytes.
@@ -32,8 +33,11 @@ var _ chat.Client = &Client{}
 type Client struct {
 	token string
 	me    User
-	error chan error
-	close chan bool
+	// pollError communicates any errors during getUpdate polling
+	// to the Close method.
+	pollError chan error
+	// Cancel cancels the background goroutines.
+	cancel context.CancelFunc
 
 	sync.Mutex
 	channels map[int64]*channel
@@ -61,17 +65,22 @@ type media struct {
 // Dial returns a new Client using the given token.
 func Dial(ctx context.Context, token string) (*Client, error) {
 	c := &Client{
-		token:    token,
-		error:    make(chan error),
-		close:    make(chan bool),
-		channels: make(map[int64]*channel),
-		users:    make(map[int64]*user),
-		media:    make(map[string]*media),
+		token:     token,
+		pollError: make(chan error, 1),
+		channels:  make(map[int64]*channel),
+		users:     make(map[int64]*user),
+		media:     make(map[string]*media),
 	}
 	if err := rpc(ctx, c, "getMe", nil, &c.me); err != nil {
 		return nil, err
 	}
-	go poll(c)
+
+	bkg := context.Background()
+	bkg, c.cancel = context.WithCancel(bkg)
+	updates := make(chan []Update, 1)
+	go poll(ctx, c, updates)
+	go demux(ctx, c, updates)
+
 	return c, nil
 }
 
@@ -102,12 +111,13 @@ func (c *Client) Join(ctx context.Context, idString string) (chat.Channel, error
 }
 
 func (c *Client) Close(context.Context) error {
-	close(c.close)
-	err := <-c.error
-	for _, ch := range c.channels {
-		close(ch.in)
+	c.cancel()
+	select {
+	case err := <-c.pollError:
+		return err
+	default:
+		return nil
 	}
-	return err
 }
 
 // SetLocalURL enables URL generation for media, using the given URL as a prefix.
@@ -120,36 +130,58 @@ func (c *Client) SetLocalURL(u url.URL) {
 	c.Unlock()
 }
 
-func poll(c *Client) {
-	ctx := context.Background()
+// Poll does long-polling on the getUpdates method,
+// sending Update slices to the updates channel.
+// Any errors are sent to c.pollError, and the function returns.
+// On return, it closes the updates channel.
+func poll(ctx context.Context, c *Client, updates chan<- []Update) {
+	defer close(updates)
 	req := struct {
 		Offset  uint64 `json:"offset"`
 		Timeout uint64 `json:"timeout"`
-	}{}
-	req.Timeout = 1 // second
-
-	var err error
-loop:
+	}{
+		Timeout: longPollSeconds, // seconds
+	}
+	var us []Update
 	for {
-		var updates []Update
-		if err = rpc(ctx, c, "getUpdates", req, &updates); err != nil {
-			break
-		}
-		for _, u := range updates {
-			if u.UpdateID < req.Offset {
-				// The API actually does not state that the array of Updates is ordered.
-				panic("out of order updates")
-			}
-			req.Offset = u.UpdateID + 1
-			update(ctx, c, u)
-		}
 		select {
-		case <-c.close:
-			break loop
+		case <-ctx.Done():
+			return
 		default:
+			if err := rpc(ctx, c, "getUpdates", req, &us); err != nil {
+				c.pollError <- err
+				return
+			}
+			if n := len(us); n > 0 {
+				req.Offset = us[n-1].UpdateID + 1
+				updates <- us
+			}
 		}
 	}
-	c.error <- err
+}
+
+// Demux de-multiplexes Updates, sending them to the appropriate Channel.
+// If either updates is closed or the context is cancelled,
+// demux closes all Channel.in channels and returns.
+func demux(ctx context.Context, c *Client, updates <-chan []Update) {
+	defer func() {
+		for _, ch := range c.channels {
+			close(ch.in)
+		}
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case us, ok := <-updates:
+			if !ok {
+				return
+			}
+			for _, u := range us {
+				update(ctx, c, u)
+			}
+		}
+	}
 }
 
 func update(ctx context.Context, c *Client, u Update) {
