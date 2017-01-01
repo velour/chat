@@ -78,8 +78,8 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 	bkg := context.Background()
 	bkg, c.cancel = context.WithCancel(bkg)
 	updates := make(chan []Update, 1)
-	go poll(ctx, c, updates)
-	go demux(ctx, c, updates)
+	go poll(bkg, c, updates)
+	go demux(bkg, c, updates)
 
 	return c, nil
 }
