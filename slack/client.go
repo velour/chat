@@ -260,6 +260,9 @@ func (c *Client) postMessage(ctx context.Context, username, iconurl, channel, te
 }
 
 func (c *Client) getUser(ctx context.Context, id chat.UserID) (chat.User, error) {
+	c.Lock()
+	defer c.Unlock()
+
 	if u, ok := c.users[id]; ok {
 		return u, nil
 	}
