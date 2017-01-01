@@ -17,9 +17,8 @@ type Message struct {
 	IconEmoji   string   `json:"icon_emoji"`
 }
 
-// Update represents a slack update message
+// Update represents a RTS update message.
 type Update struct {
-	ResponseError
 	ID      uint64      `json:"id"`
 	Type    string      `json:"type"`
 	SubType string      `json:"subtype"`
@@ -33,19 +32,15 @@ type Update struct {
 	} `json:"error"`
 }
 
-// A ResponseError is a slack response with ok=false and an error message.
-type ResponseError struct{ Response }
-
-func (err ResponseError) Error() string {
-	return "response error: " + err.Response.Error
-}
-
 // Response is a header common to all slack HTTP responses.
-type Response struct {
+// Each message type that is a response should embed ResponseHeader.
+type ResponseHeader struct {
 	OK      bool   `json:"ok"`
 	Error   string `json:"error"`
 	Warning string `json:"warning"`
 }
+
+func (rh *ResponseHeader) Header() ResponseHeader { return *rh }
 
 // A User object describes a slack user.
 type User struct {

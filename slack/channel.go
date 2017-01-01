@@ -57,7 +57,7 @@ func (ch Channel) Receive(ctx context.Context) (interface{}, error) {
 			if !ok {
 				return nil, io.EOF
 			}
-			switch ev, err := ch.chatEvent(u); {
+			switch ev, err := ch.chatEvent(ctx, u); {
 			case err != nil:
 				return nil, err
 			case ev == nil:
@@ -72,10 +72,10 @@ func (ch Channel) Receive(ctx context.Context) (interface{}, error) {
 // chatEvent returns the chat event corresponding to the update.
 // If the Update cannot be mapped, nil is returned with a nil error.
 // This signifies an Update that sholud be ignored.
-func (ch *Channel) chatEvent(u *Update) (interface{}, error) {
+func (ch *Channel) chatEvent(ctx context.Context, u *Update) (interface{}, error) {
 	switch {
 	case u.Type == "message" && u.User != "":
-		return ch.chatMessage(u)
+		return ch.chatMessage(ctx, u)
 
 	default:
 		return nil, nil
@@ -83,8 +83,8 @@ func (ch *Channel) chatEvent(u *Update) (interface{}, error) {
 }
 
 // chatMessage converts a valid "message" type into a chat.Message
-func (ch *Channel) chatMessage(msg *Update) (interface{}, error) {
-	user, err := ch.client.getUser(msg.User)
+func (ch *Channel) chatMessage(ctx context.Context, msg *Update) (interface{}, error) {
+	user, err := ch.client.getUser(ctx, msg.User)
 	if err != nil {
 		return nil, err
 	}
@@ -119,25 +119,16 @@ func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 	}
 
 	var resp struct {
-		ResponseError
+		ResponseHeader
 		TS string `json:"ts"` // message timestamp
 	}
-	err := ch.client.do(&resp, "chat.postMessage", args...)
-	if err != nil {
+	if err := rpc(ctx, ch.client, &resp, "chat.postMessage", args...); err != nil {
 		return chat.Message{}, err
-	}
-	if !resp.OK {
-		return chat.Message{}, resp
 	}
 
 	id := chat.MessageID(resp.TS)
-	msg := chat.Message{
-		ID:   id,
-		From: *sendAs,
-		Text: text,
-	}
-
-	return msg, err
+	msg := chat.Message{ID: id, From: *sendAs, Text: text}
+	return msg, nil
 }
 
 // filterOutgoing checks an outgoing Slack message body for network conversion issues
@@ -158,25 +149,23 @@ func (ch Channel) SendAs(ctx context.Context, sendAs chat.User, text string) (ch
 }
 
 func (ch Channel) Delete(ctx context.Context, id chat.MessageID) error {
-	var resp struct {
-		ResponseError
-	}
-	err := ch.client.do(&resp, "chat.delete", "ts="+string(id), "channel="+ch.ID)
-	if !resp.OK {
-		return resp
-	}
-	return err
+	var resp ResponseHeader
+	return rpc(ctx, ch.client, &resp,
+		"chat.delete",
+		"ts="+string(id),
+		"channel="+ch.ID)
 }
 
 func (ch Channel) Edit(ctx context.Context, id chat.MessageID, newText string) (chat.MessageID, error) {
-	var resp struct {
-		ResponseError
+	var resp ResponseHeader
+	if err := rpc(ctx, ch.client, &resp,
+		"chat.update",
+		"channel="+ch.ID,
+		"ts="+string(id),
+		"text="+newText); err != nil {
+		return "", err
 	}
-	err := ch.client.do(&resp, "chat.update", "channel="+ch.ID, "ts="+string(id), "text="+newText)
-	if !resp.OK {
-		return id, resp
-	}
-	return id, err
+	return id, nil
 }
 
 func (ch Channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {

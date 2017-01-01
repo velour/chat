@@ -10,10 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"reflect"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/velour/chat"
@@ -54,7 +52,7 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 	}
 
 	var resp struct {
-		Response
+		ResponseHeader
 		URL  string `json:"url"`
 		Self struct {
 			ID string `json:"id"`
@@ -63,11 +61,8 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 			Domain string `json:"domain"`
 		} `json:"team"`
 	}
-	if err := c.do(&resp, "rtm.start"); err != nil {
+	if err := rpc(ctx, c, &resp, "rtm.start"); err != nil {
 		return nil, err
-	}
-	if !resp.OK {
-		return nil, ResponseError{resp.Response}
 	}
 	webSock, err := websocket.Dial(resp.URL, "", api.String())
 	if err != nil {
@@ -77,21 +72,21 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 	c.id = resp.Self.ID
 	c.domain = resp.Team.Domain
 
-	event, err := c.next()
-	if err != nil {
+	switch event, err := c.next(ctx); {
+	case err != nil:
 		return nil, err
-	}
-	if event.Type != "hello" {
+	case event.Type != "hello":
 		return nil, fmt.Errorf("expected hello, got %v", event)
 	}
 
 	go ping(c)
-	go c.poll()
+	go poll(c)
 
 	return c, nil
 }
 
 func ping(c *Client) {
+	ctx := context.Background()
 	ticker := time.NewTicker(10 * time.Second)
 	for {
 		select {
@@ -100,7 +95,7 @@ func ping(c *Client) {
 			ch <- c.webSock.Close()
 			return
 		case <-ticker.C:
-			if err := c.send(map[string]interface{}{"type": "ping"}); err != nil {
+			if err := c.send(ctx, map[string]interface{}{"type": "ping"}); err != nil {
 				ticker.Stop()
 				c.webSock.Close()
 				<-c.done <- fmt.Errorf("failed to send ping: %v", err)
@@ -122,11 +117,11 @@ func (c *Client) Close(_ context.Context) error {
 
 // Join returns a Channel for a Slack connection
 // Note: Slack users must add the bot to their channel.
-func (c *Client) join(channel string) (Channel, error) {
+func (c *Client) join(ctx context.Context, channel string) (Channel, error) {
 	c.Lock()
 	defer c.Unlock()
 
-	channels, err := c.channelsList()
+	channels, err := c.channelsList(ctx)
 	if err != nil {
 		return Channel{}, err
 	}
@@ -136,47 +131,33 @@ func (c *Client) join(channel string) (Channel, error) {
 			return ch, nil
 		}
 	}
-	return Channel{}, errors.New("Channel not found")
+	return Channel{}, errors.New("channel not found")
 }
 
 func (c *Client) Join(ctx context.Context, channel string) (chat.Channel, error) {
-	return c.join(channel)
+	return c.join(ctx, channel)
 }
 
-// next returns the next event from Slack.
-// It never returns pong type messages.
-func (c *Client) next() (Update, error) {
+func poll(c *Client) {
+	ctx := context.Background()
 	for {
-		event := Update{}
-		if err := websocket.JSON.Receive(c.webSock, &event); err != nil {
-			return Update{}, err
-		}
-		if event.Type != "pong" {
-			return event, nil
-		}
-	}
-}
-
-func (c *Client) poll() {
-	for {
-		msg, err := c.next()
+		msg, err := c.next(ctx)
 		if err != nil {
-			continue
+			return
 		}
-		switch msg.Type {
-		case "message":
-			c.update(msg)
+		if msg.Type == "message" {
+			c.update(ctx, msg)
 		}
 	}
 }
 
-func (c *Client) update(u Update) {
+func (c *Client) update(ctx context.Context, u Update) {
 	c.Lock()
 	defer c.Unlock()
 
 	ch, ok := c.channels[u.Channel]
 	if !ok {
-		ch, _ = c.join(u.Channel)
+		ch, _ = c.join(ctx, u.Channel)
 	}
 	select {
 	case ch.in <- []*Update{&u}:
@@ -185,42 +166,51 @@ func (c *Client) update(u Update) {
 	}
 }
 
-// send sets the "id" field of the message to the next ID and sends it.
-// It does not await a response.
-func (c *Client) send(message map[string]interface{}) error {
+// next returns the next event from Slack.
+// It never returns pong type messages.
+func (c *Client) next(ctx context.Context) (Update, error) {
+	err := make(chan error, 1)
+	for {
+		var u Update
+		go func() { err <- websocket.JSON.Receive(c.webSock, &u) }()
+		select {
+		case <-ctx.Done():
+			return Update{}, ctx.Err()
+		case err := <-err:
+			if err != nil {
+				return Update{}, err
+			}
+			if u.Type != "pong" {
+				return u, nil
+			}
+		}
+	}
+}
+
+// send sends an RTM message. It returns without waiting for a response.
+func (c *Client) send(ctx context.Context, message map[string]interface{}) error {
 	c.Lock()
 	message["id"] = c.nextID
 	c.nextID++
 	c.Unlock()
-	return websocket.JSON.Send(c.webSock, message)
-}
-
-// UsersList returns a list of all slack users.
-func (c *Client) UsersList() ([]User, error) {
-	var resp struct {
-		Response
-		Members []User `json:"members"`
+	err := make(chan error, 1)
+	go func() { err <- websocket.JSON.Send(c.webSock, message) }()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-err:
+		return err
 	}
-	if err := c.do(&resp, "users.list"); err != nil {
-		return nil, err
-	}
-	if !resp.OK {
-		return nil, ResponseError{resp.Response}
-	}
-	return resp.Members, nil
 }
 
 // channelsList returns a list of all slack channels.
-func (c *Client) channelsList() ([]Channel, error) {
+func (c *Client) channelsList(ctx context.Context) ([]Channel, error) {
 	var resp struct {
-		Response
+		ResponseHeader
 		Channels []Channel `json:"channels"`
 	}
-	if err := c.do(&resp, "channels.list"); err != nil {
+	if err := rpc(ctx, c, &resp, "channels.list"); err != nil {
 		return nil, err
-	}
-	if !resp.OK {
-		return nil, ResponseError{resp.Response}
 	}
 	channels := make([]Channel, 0)
 	for _, ch := range resp.Channels {
@@ -229,61 +219,31 @@ func (c *Client) channelsList() ([]Channel, error) {
 	return channels, nil
 }
 
-func (c *Client) generateNextID() uint64 {
-	return atomic.AddUint64(&c.nextID, 1)
-}
-
-// groupsList returns a list of all slack groups — private channels.
-func (c *Client) groupsList() ([]Channel, error) {
-	var resp struct {
-		Response
-		Groups []Channel `json:"groups"`
-	}
-	if err := c.do(&resp, "groups.list"); err != nil {
-		return nil, err
-	}
-	if !resp.OK {
-		return nil, ResponseError{resp.Response}
-	}
-	return resp.Groups, nil
-}
-
 // postMessage posts a message to the server with as the given username.
-func (c *Client) postMessage(username, iconurl, channel, text string) error {
+func (c *Client) postMessage(ctx context.Context, username, iconurl, channel, text string) error {
 	if iconurl != "" {
 		iconurl = "icon_url=" + iconurl
 	}
-	var resp Response
-	err := c.do(&resp, "chat.postMessage",
+	var resp ResponseHeader
+	return rpc(ctx, c, &resp, "chat.postMessage",
 		"username="+username,
 		iconurl,
 		"as_user=false",
 		"channel="+channel,
 		"text="+text)
-	if err != nil {
-		return err
-	}
-	if !resp.OK {
-		return ResponseError{resp}
-	}
-	return nil
 }
 
-func (c *Client) getUser(id chat.UserID) (chat.User, error) {
+func (c *Client) getUser(ctx context.Context, id chat.UserID) (chat.User, error) {
 	if u, ok := c.users[id]; ok {
 		return u, nil
 	}
 
 	var resp struct {
-		Response
+		ResponseHeader
 		User User `json:"user"`
 	}
-	err := c.do(&resp, "users.info", "user="+string(id))
-	if err != nil {
+	if err := rpc(ctx, c, &resp, "users.info", "user="+string(id)); err != nil {
 		return chat.User{}, err
-	}
-	if !resp.OK {
-		return chat.User{}, fmt.Errorf("User not found: %s", id)
 	}
 
 	c.users[id] = chat.User{
@@ -297,7 +257,42 @@ func (c *Client) getUser(id chat.UserID) (chat.User, error) {
 	return c.users[id], nil
 }
 
-func (c *Client) do(resp interface{}, method string, args ...string) error {
+type Response interface {
+	Header() ResponseHeader
+}
+
+func rpc(ctx context.Context, c *Client, resp Response, method string, args ...string) error {
+	err := make(chan error, 1)
+	go func() { err <- _rpc(c, resp, method, args) }()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-err:
+		return err
+	}
+}
+
+func _rpc(c *Client, resp Response, method string, args []string) error {
+	u := rpcURL(c, method, args)
+	httpResp, err := http.Get(u.String())
+	if err != nil {
+		log.Printf("Slack RPC %s %+v failed: %s\n", method, args, err)
+		return err
+	}
+	defer httpResp.Body.Close()
+	if err = json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
+		return err
+	}
+	if h := resp.Header(); !h.OK {
+		log.Printf("Slack RPC %s %+v response error: %s\n", method, args, h.Error)
+		return errors.New(h.Error)
+	} else if h.Warning != "" {
+		log.Printf("Slack RPC %s %+v response warning: %s\n", method, args, h.Warning)
+	}
+	return nil
+}
+
+func rpcURL(c *Client, method string, args []string) *url.URL {
 	u := api
 	u.Path = path.Join(u.Path, method)
 	vals := make(url.Values)
@@ -308,45 +303,10 @@ func (c *Client) do(resp interface{}, method string, args ...string) error {
 		}
 		fs := strings.SplitN(a, "=", 2)
 		if len(fs) != 2 {
-			return errors.New("bad arg: " + a)
+			panic("bad arg: " + a)
 		}
 		vals[fs[0]] = []string{fs[1]}
 	}
 	u.RawQuery = vals.Encode()
-	httpResp, err := http.Get(u.String())
-	if err != nil {
-		log.Printf("Slack RPC %s %+v failed: %s\n", method, args, err)
-		return err
-	}
-	defer httpResp.Body.Close()
-	if err = json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
-		return err
-	}
-	logResponseError(method, args, resp)
-	return nil
-}
-
-func logResponseError(method string, args []string, resp interface{}) {
-	v := reflect.ValueOf(resp)
-	if v.Type().Kind() != reflect.Ptr {
-		return
-	}
-	v = v.Elem()
-	if v.Type().Kind() != reflect.Struct {
-		return
-	}
-	z := reflect.Value{}
-	respValue := v.FieldByName("Response")
-	if respValue == z || respValue.Type().Kind() != reflect.Struct {
-		return
-	}
-	okValue := respValue.FieldByName("OK")
-	if okValue == z || okValue.Type().Kind() != reflect.Bool || okValue.Bool() {
-		return
-	}
-	errValue := respValue.FieldByName("Error")
-	if errValue == z || errValue.Type().Kind() != reflect.String {
-		return
-	}
-	log.Printf("Slack RPC %s %+v failed: %s\n", method, args, errValue.String())
+	return &u
 }
