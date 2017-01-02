@@ -142,12 +142,12 @@ func poll(ctx context.Context, c *Client, updates chan<- []Update) {
 	}{
 		Timeout: longPollSeconds, // seconds
 	}
-	var us []Update
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
+			var us []Update
 			if err := rpc(ctx, c, "getUpdates", req, &us); err != nil {
 				c.pollError <- err
 				return
