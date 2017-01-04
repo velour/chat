@@ -31,7 +31,8 @@ type channel struct {
 	// This is user to determin the server's PRIVMSG header size,
 	// in order to truncate long PRIVMSGs such that the server's
 	// relayed versions of the will not be too long.
-	myOrigin string
+	myOrigin   string
+	originLock sync.Mutex
 
 	// In simulates an infinite buffered channel
 	// of events from the Client to this channel.
@@ -62,11 +63,11 @@ func newChannel(client *Client, name string) *channel {
 	}
 
 	// Block all channel send operations until we have the origin.
-	ch.Lock()
+	ch.originLock.Lock()
 
 	go func() {
 		ch.myOrigin = <-ch.inOrigin
-		ch.Unlock()
+		ch.originLock.Unlock()
 
 		for ns := range ch.inWho {
 			for _, n := range ns {
@@ -137,9 +138,9 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, linePrefix, text
 		prefix = actionPrefix + " "
 		suffix = actionSuffix
 	}
-	ch.Lock()
+	ch.originLock.Lock()
 	origin := ch.myOrigin
-	ch.Unlock()
+	ch.originLock.Unlock()
 	for _, t := range splitPrivMsg(origin, ch.name, prefix+linePrefix, suffix, text) {
 		if err := send(ctx, ch.client, PRIVMSG, ch.name, t); err != nil {
 			return chat.Message{}, err
