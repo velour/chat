@@ -180,6 +180,7 @@ loop:
 				continue
 			}
 			channelName := msg.Arguments[0]
+
 			c.Lock()
 			ch, ok := c.channels[channelName]
 			myNick := c.nick
@@ -189,6 +190,13 @@ loop:
 				continue
 			}
 			if msg.Origin == myNick {
+				// ch.inOrigin is only received once.
+				// Don't block in case this is a stray JOIN
+				// after having already received one.
+				select {
+				case ch.inOrigin <- msg.Origin + "!" + msg.User + "@" + msg.Host:
+				default:
+				}
 				continue
 			}
 			ch.Lock()

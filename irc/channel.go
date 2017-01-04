@@ -23,6 +23,16 @@ type channel struct {
 	// and the channel goes into normal operation.
 	inWho chan []string
 
+	// InOrigin receives the server's origin string,
+	// sent when receiving the JOIN message for this channel.
+	inOrigin chan string
+
+	// The origin sent by the server for my messages.
+	// This is user to determin the server's PRIVMSG header size,
+	// in order to truncate long PRIVMSGs such that the server's
+	// relayed versions of the will not be too long.
+	myOrigin string
+
 	// In simulates an infinite buffered channel
 	// of events from the Client to this channel.
 	// The Client publishes events without blocking.
@@ -42,14 +52,22 @@ type channel struct {
 
 func newChannel(client *Client, name string) *channel {
 	ch := &channel{
-		client: client,
-		name:   name,
-		inWho:  make(chan []string, 1),
-		in:     make(chan []interface{}, 1),
-		out:    make(chan interface{}),
-		users:  make(map[string]bool),
+		client:   client,
+		name:     name,
+		inWho:    make(chan []string, 1),
+		inOrigin: make(chan string, 1),
+		in:       make(chan []interface{}, 1),
+		out:      make(chan interface{}),
+		users:    make(map[string]bool),
 	}
+
+	// Block all channel send operations until we have the origin.
+	ch.Lock()
+
 	go func() {
+		ch.myOrigin = <-ch.inOrigin
+		ch.Unlock()
+
 		for ns := range ch.inWho {
 			for _, n := range ns {
 				ch.Lock()
@@ -64,6 +82,7 @@ func newChannel(client *Client, name string) *channel {
 		}
 		close(ch.out)
 	}()
+
 	return ch
 }
 
@@ -80,6 +99,25 @@ func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 		}
 		return ev, nil
 	}
+}
+
+// splitPrivMsg returns text, split such that each split begins with prefix,
+// ends with suffix, contains no newlines, and is of no more than MaxBytes.
+func splitPrivMsg(origin, channelName, prefix, suffix, text string) []string {
+	header := Message{Origin: origin, Command: PRIVMSG, Arguments: []string{channelName, ""}}
+	maxTextSize := MaxBytes - (len(header.Bytes()) + len(prefix) + len(suffix))
+
+	var texts []string
+	for _, line := range strings.Split(text, "\n") {
+		for len(line) > maxTextSize {
+			texts = append(texts, prefix+line[:maxTextSize]+suffix)
+			line = line[maxTextSize:]
+		}
+		if len(line) > 0 {
+			texts = append(texts, prefix+line+suffix)
+		}
+	}
+	return texts
 }
 
 // send sends a message to the channel.
@@ -99,8 +137,10 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, linePrefix, text
 		prefix = actionPrefix + " "
 		suffix = actionSuffix
 	}
-	for _, t := range strings.Split(text, "\n") {
-		t = prefix + linePrefix + t + suffix
+	ch.Lock()
+	origin := ch.myOrigin
+	ch.Unlock()
+	for _, t := range splitPrivMsg(origin, ch.name, prefix+linePrefix, suffix, text) {
 		if err := send(ctx, ch.client, PRIVMSG, ch.name, t); err != nil {
 			return chat.Message{}, err
 		}
