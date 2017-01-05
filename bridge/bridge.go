@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"strconv"
 	"sync"
 
@@ -116,6 +115,9 @@ func (b *Bridge) Close(ctx context.Context) error {
 	if err == io.EOF {
 		err = errors.New("unexpected EOF")
 	}
+	if err != nil {
+		b.Send(ctx, "Bridge closed with error: "+err.Error())
+	}
 	return err
 }
 
@@ -180,6 +182,8 @@ func poll(ctx context.Context, b *Bridge, ch chat.Channel) {
 			// Ignore context errors. These are expected. No need to report back.
 			return
 		case err != nil:
+			err = fmt.Errorf("failed to receive from %s on %s: %s\n",
+				ch.Name(), ch.ServiceName(), err)
 			// Don't block. We only report the first error.
 			select {
 			case b.pollError <- err:
@@ -376,9 +380,8 @@ func sendMessage(ctx context.Context,
 				m, err = ch.SendAs(ctx, *sendAs, text)
 			}
 			if err != nil {
-				log.Printf("Failed to send message to %s on %s: %s\n",
+				return fmt.Errorf("failed to send message to %s on %s: %s\n",
 					ch.Name(), ch.ServiceName(), err)
-				return err
 			}
 			messages[i] = message{to: ch, msg: m}
 			return nil
