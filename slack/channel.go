@@ -102,7 +102,50 @@ func (ch *Channel) chatMessage(ctx context.Context, msg *Update) (interface{}, e
 		text = strings.Replace(text, "<@"+m+">", "@"+u.Name(), -1)
 	}
 
+	text = media(text)
+
 	return chat.Message{ID: id, From: user, Text: text}, nil
+}
+
+// media strips extra junk off of slack media messages
+func media(txt string) string {
+	isLinkHelper := func(r rune, txt string) bool {
+		return r == '<' &&
+			len(txt) > 0 &&
+			txt[0] != '@' &&
+			strings.Contains(txt, ">") &&
+			strings.Contains(txt, "://")
+	}
+	var output []rune
+	notLink := true
+	for len(txt) > 0 {
+		r, i := utf8.DecodeRuneInString(txt)
+		txt = txt[i:]
+		if isLinkHelper(r, txt) {
+			notLink = false
+			for len(txt) > 0 {
+				r, i := utf8.DecodeRuneInString(txt)
+				txt = txt[i:]
+				if r == '|' {
+					for len(txt) > 0 {
+						r, i := utf8.DecodeRuneInString(txt)
+						txt = txt[i:]
+						if r == '>' {
+							notLink = true
+							break
+						}
+					}
+				} else if r != '>' || notLink {
+					output = append(output, r)
+				} else {
+					notLink = true
+				}
+			}
+		} else {
+			output = append(output, r)
+		}
+	}
+	return string(output)
 }
 
 func mentions(txt string) []string {
