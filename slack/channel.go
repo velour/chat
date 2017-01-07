@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/velour/chat"
 )
@@ -93,81 +92,17 @@ func (ch *Channel) chatMessage(ctx context.Context, msg *Update) (interface{}, e
 	id := chat.MessageID(msg.Ts)
 	text := html.UnescapeString(msg.Text)
 
-	for _, m := range mentions(text) {
-		u, err := ch.client.getUser(ctx, chat.UserID(m))
+	findUser := func(id string) (string, bool) {
+		u, err := ch.client.getUser(ctx, chat.UserID(id))
 		if err != nil {
-			log.Printf("Failed to lookup mention user %s: %s\n", m, err)
-			continue
+			log.Printf("Failed to lookup mention user %s: %s\n", id, err)
+			return "", false
 		}
-		text = strings.Replace(text, "<@"+m+">", "@"+u.Name(), -1)
+		return u.Name(), true
 	}
-
-	text = media(text)
+	text = fixText(findUser, text)
 
 	return chat.Message{ID: id, From: user, Text: text}, nil
-}
-
-// media strips extra junk off of slack media messages
-func media(txt string) string {
-	isLinkHelper := func(r rune, txt string) bool {
-		return r == '<' &&
-			len(txt) > 0 &&
-			txt[0] != '@' &&
-			strings.Contains(txt, ">") &&
-			strings.Contains(txt, "://")
-	}
-	var output []rune
-	notLink := true
-	for len(txt) > 0 {
-		r, i := utf8.DecodeRuneInString(txt)
-		txt = txt[i:]
-		if isLinkHelper(r, txt) {
-			notLink = false
-			for len(txt) > 0 {
-				r, i := utf8.DecodeRuneInString(txt)
-				txt = txt[i:]
-				if r == '|' {
-					for len(txt) > 0 {
-						r, i := utf8.DecodeRuneInString(txt)
-						txt = txt[i:]
-						if r == '>' {
-							notLink = true
-							break
-						}
-					}
-				} else if r != '>' || notLink {
-					output = append(output, r)
-				} else {
-					notLink = true
-				}
-			}
-		} else {
-			output = append(output, r)
-		}
-	}
-	return string(output)
-}
-
-func mentions(txt string) []string {
-	var mentions []string
-	for len(txt) > 0 {
-		r, i := utf8.DecodeRuneInString(txt)
-		txt = txt[i:]
-		if r == '<' && len(txt) > 0 && txt[0] == '@' {
-			txt = txt[1:] // chomp '@'
-			var mention []rune
-			for len(txt) > 0 {
-				r, i := utf8.DecodeRuneInString(txt)
-				txt = txt[i:]
-				if r == '>' {
-					break
-				}
-				mention = append(mention, r)
-			}
-			mentions = append(mentions, string(mention))
-		}
-	}
-	return mentions
 }
 
 // Send sends text to the Channel and returns the sent Message.
