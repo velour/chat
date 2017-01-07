@@ -30,6 +30,7 @@ type Update struct {
 		Code uint64 `json:"code"`
 		Msg  string `json:"msg"`
 	} `json:"error"`
+	File `json:"file"`
 }
 
 // File represents a shared file.

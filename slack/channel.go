@@ -6,6 +6,8 @@ import (
 	"html"
 	"io"
 	"log"
+	"net/url"
+	"path"
 	"strings"
 
 	"github.com/velour/chat"
@@ -74,35 +76,47 @@ func (ch Channel) Receive(ctx context.Context) (interface{}, error) {
 // If the Update cannot be mapped, nil is returned with a nil error.
 // This signifies an Update that sholud be ignored.
 func (ch *Channel) chatEvent(ctx context.Context, u *Update) (interface{}, error) {
-	switch {
-	case u.Type == "message" && u.User != "":
-		return ch.chatMessage(ctx, u)
-
-	default:
+	if u.User == "" {
+		// ignore updates without users.
 		return nil, nil
 	}
-}
-
-// chatMessage converts a valid "message" type into a chat.Message
-func (ch *Channel) chatMessage(ctx context.Context, msg *Update) (interface{}, error) {
-	user, err := ch.client.getUser(ctx, msg.User)
+	user, err := ch.client.getUser(ctx, u.User)
 	if err != nil {
 		return nil, err
 	}
-	id := chat.MessageID(msg.Ts)
-	text := html.UnescapeString(msg.Text)
 
-	findUser := func(id string) (string, bool) {
-		u, err := ch.client.getUser(ctx, chat.UserID(id))
-		if err != nil {
-			log.Printf("Failed to lookup mention user %s: %s\n", id, err)
-			return "", false
-		}
-		return u.Name(), true
+	var myURL string
+	ch.client.Lock()
+	if ch.client.localURL != nil {
+		myURL = ch.client.localURL.String()
 	}
-	text = fixText(findUser, text)
+	ch.client.Unlock()
 
-	return chat.Message{ID: id, From: user, Text: text}, nil
+	switch {
+	case u.Type == "message" && u.SubType == "file_share" && myURL != "":
+		fileURL, err := url.Parse(myURL)
+		if err != nil {
+			panic(err)
+		}
+		fileURL.Path = path.Join(fileURL.Path, u.File.ID)
+		text := "/me shared a file: " + fileURL.String()
+		id := chat.MessageID(u.Ts)
+		return chat.Message{ID: id, From: user, Text: text}, nil
+
+	case u.Type == "message":
+		id := chat.MessageID(u.Ts)
+		findUser := func(id string) (string, bool) {
+			u, err := ch.client.getUser(ctx, chat.UserID(id))
+			if err != nil {
+				log.Printf("Failed to lookup mention user %s: %s\n", id, err)
+				return "", false
+			}
+			return u.Name(), true
+		}
+		text := fixText(findUser, html.UnescapeString(u.Text))
+		return chat.Message{ID: id, From: user, Text: text}, nil
+	}
+	return nil, nil
 }
 
 // Send sends text to the Channel and returns the sent Message.
