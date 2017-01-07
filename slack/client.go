@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -39,10 +41,14 @@ type Client struct {
 	// cancel cancels the background goroutines.
 	cancel context.CancelFunc
 
-	users    map[chat.UserID]chat.User
-	channels map[string]Channel
-	nextID   uint64
+	httpClient http.Client
+
 	sync.Mutex
+	channels map[string]Channel
+	users    map[chat.UserID]chat.User
+	media    map[string]File
+	nextID   uint64
+	localURL *url.URL
 }
 
 // NewClient returns a new slack client using the given token.
@@ -55,6 +61,7 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 		pollError: make(chan error, 1),
 		channels:  make(map[string]Channel),
 		users:     make(map[chat.UserID]chat.User),
+		media:     make(map[string]File),
 	}
 
 	var resp struct {
@@ -113,6 +120,16 @@ func (c *Client) Close(_ context.Context) error {
 	default:
 		return nil
 	}
+}
+
+// SetLocalURL enables URL generation for media, using the given URL as a prefix.
+// For example, if SetLocalURL is called with "http://www.abc.com/slack/media",
+// all Channels on the Client will begin populating non-empty chat.User.PhotoURL fields
+// of the form http://www.abc.com/slack/media/<photo file>.
+func (c *Client) SetLocalURL(u url.URL) {
+	c.Lock()
+	c.localURL = &u
+	c.Unlock()
 }
 
 // Join returns a Channel for a Slack connection
@@ -284,6 +301,66 @@ func (c *Client) getUser(ctx context.Context, id chat.UserID) (chat.User, error)
 	}
 
 	return c.users[id], nil
+}
+
+// ServeHTTP serves files, photos, and other media from Slack.
+// It only handles GET requests, and
+// the final path element of the request must be a Slack File ID.
+// The response is the corresponding file data.
+func (c *Client) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	if req.Method != http.MethodGet {
+		http.Error(w, "unsupported method", http.StatusMethodNotAllowed)
+		return
+	}
+	f, err := filesInfo(ctx, c, path.Base(req.URL.Path))
+	if err != nil {
+		http.Error(w, "Slack files.info failed", http.StatusBadRequest)
+		return
+	}
+
+	authReq, err := http.NewRequest("GET", f.URLPrivateDownload, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	authReq.Header["Authorization"] = []string{"Bearer " + c.token}
+
+	resp, err := c.httpClient.Do(authReq)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		if data, err := ioutil.ReadAll(io.LimitReader(resp.Body, 512)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		} else {
+			http.Error(w, string(data), resp.StatusCode)
+		}
+		return
+	}
+	w.Header()["Content-Type"] = []string{f.Mimetype}
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func filesInfo(ctx context.Context, c *Client, fileID string) (File, error) {
+	c.Lock()
+	defer c.Unlock()
+	if f, ok := c.media[fileID]; ok {
+		return f, nil
+	}
+	var resp struct {
+		ResponseHeader
+		File `json:"file"`
+	}
+	if err := rpc(ctx, c, &resp, "files.info", "file="+fileID, "count=0"); err != nil {
+		return File{}, err
+	}
+	c.media[fileID] = resp.File
+	return resp.File, nil
 }
 
 type Response interface {

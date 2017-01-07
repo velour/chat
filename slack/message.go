@@ -32,6 +32,13 @@ type Update struct {
 	} `json:"error"`
 }
 
+// File represents a shared file.
+type File struct {
+	ID                 string `json:"id"`
+	URLPrivateDownload string `json:"url_private_download"`
+	Mimetype           string `json:"mimetype"`
+}
+
 // Response is a header common to all slack HTTP responses.
 // Each message type that is a response should embed ResponseHeader.
 type ResponseHeader struct {
