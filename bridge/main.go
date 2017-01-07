@@ -104,6 +104,14 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		const slackMediaPath = "/slack/media/"
+		http.Handle(slackMediaPath, slackClient)
+		baseURL, err := url.Parse(*httpPublic)
+		if err != nil {
+			panic(err)
+		}
+		baseURL.Path = path.Join(baseURL.Path, slackMediaPath)
+		slackClient.SetLocalURL(*baseURL)
 
 		channels = append(channels, slackChannel)
 	}
