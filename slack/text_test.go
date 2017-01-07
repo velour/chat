@@ -61,6 +61,11 @@ func TestFixTxt(t *testing.T) {
 			text: "someone uploaded a file: <https://hashvelour.slack.com/files/someone/F3MRRSDM2/img_0063.jpg> and commented: It exists but a > b!",
 			want: "someone uploaded a file: https://hashvelour.slack.com/files/someone/F3MRRSDM2/img_0063.jpg and commented: It exists but a > b!",
 		},
+		{
+			name: "Emoji",
+			text: "prefix :copyright: mid:interrobang::relaxed:suffix",
+			want: "prefix © mid⁉☺suffix",
+		},
 	}
 	for _, test := range tests {
 		if got := fixText(findUser, test.text); got != test.want {
