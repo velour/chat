@@ -14,6 +14,7 @@ import (
 	"path"
 
 	"github.com/eaburns/pretty"
+	"github.com/golang/sync/errgroup"
 	"github.com/velour/chat"
 	"github.com/velour/chat/bridge"
 	"github.com/velour/chat/irc"
@@ -139,6 +140,15 @@ loop:
 		}
 	}
 	if err := b.Close(ctx); err != nil {
-		panic(err)
+		var group errgroup.Group
+		for _, ch := range channels {
+			ch := ch
+			group.Go(func() error {
+				ch.Send(ctx, "Bridge closed with error: "+err.Error())
+				return nil
+			})
+		}
+		log.Printf("Bridge closed with error: %s", err)
+		group.Wait()
 	}
 }

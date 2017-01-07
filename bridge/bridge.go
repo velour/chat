@@ -115,9 +115,6 @@ func (b *Bridge) Close(ctx context.Context) error {
 	if err == io.EOF {
 		err = errors.New("unexpected EOF")
 	}
-	if err != nil {
-		b.Send(ctx, "Bridge closed with error: "+err.Error())
-	}
 	return err
 }
 
