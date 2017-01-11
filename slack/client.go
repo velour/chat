@@ -215,7 +215,7 @@ func (c *Client) next(ctx context.Context) (Update, error) {
 	err := make(chan error, 1)
 	for {
 		var u Update
-		go func() { err <- websocket.JSON.Receive(c.webSock, &u) }()
+		go func() { err <- jsonCodec.Receive(c.webSock, &u) }()
 		select {
 		case <-ctx.Done():
 			return Update{}, ctx.Err()
@@ -386,7 +386,7 @@ func _rpc(c *Client, resp Response, method string, args []string) error {
 		return err
 	}
 	defer httpResp.Body.Close()
-	if err = json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
+	if err = decodeJSON(httpResp.Body, resp); err != nil {
 		return err
 	}
 	if h := resp.Header(); !h.OK {
@@ -415,4 +415,37 @@ func rpcURL(c *Client, method string, args []string) *url.URL {
 	}
 	u.RawQuery = vals.Encode()
 	return &u
+}
+
+// Like websocket.JSON, but logs a verbose error if decode fails.
+var jsonCodec = websocket.Codec{
+	Marshal: func(v interface{}) ([]byte, byte, error) {
+		data, err := json.Marshal(v)
+		return data, websocket.TextFrame, err
+	},
+
+	Unmarshal: func(data []byte, _ byte, v interface{}) error {
+		if err := json.Unmarshal(data, v); err != nil {
+			log.Printf("Error decoding JSON into %T: %s", v, err)
+			log.Println(string(data))
+			return err
+		}
+		return nil
+	},
+}
+
+// decodeJSON decodes a JSON object from r into res.
+// If there is an error decoding the JSON,
+// the entire JSON contents is logged along with the error.
+func decodeJSON(r io.Reader, v interface{}) error {
+	data, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	if err = json.Unmarshal(data, v); err != nil {
+		log.Printf("Error decoding JSON into %T: %s", v, err)
+		log.Println(string(data))
+		return err
+	}
+	return nil
 }
