@@ -215,7 +215,19 @@ func (c *Client) next(ctx context.Context) (Update, error) {
 	err := make(chan error, 1)
 	for {
 		var u Update
-		go func() { err <- jsonCodec.Receive(c.webSock, &u) }()
+		go func() {
+		again:
+			e := jsonCodec.Receive(c.webSock, &u)
+			if _, ok := e.(*json.UnmarshalTypeError); ok {
+				// Not all RTM events can be unmarshaled into an Update.
+				// However, all "message" type events can,
+				// and that's all we care about.
+				// Ignore any events that failed to unmarshal
+				// due to UnmarshalTypeError.
+				goto again
+			}
+			err <- e
+		}()
 		select {
 		case <-ctx.Done():
 			return Update{}, ctx.Err()
