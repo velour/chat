@@ -219,7 +219,7 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 	case chat.Reply:
 		findMessage := makeFindMessage(b, event.origin, ev.ReplyTo.ID)
 		to := allChannelsExcept(b, event.origin)
-		msgs, err := sendMessage(ctx, to, nil, findMessage, ev.Reply.Text)
+		msgs, err := sendMessage(ctx, to, &ev.Reply.From, findMessage, ev.Reply.Text)
 		if err != nil {
 			return err
 		}
