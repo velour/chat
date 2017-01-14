@@ -129,6 +129,10 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 
 		case msg.Sticker != nil:
 			if url, ok := mediaURL(ch.client, msg.Sticker.FileID); ok {
+				// Slack does not unfurl URLs posted within the last hour.
+				// But we want stickers to unfurl each time they are posted.
+				// So, we add a nonce to the end, makeing each unique.
+				url = url + "?nonce=" + strconv.FormatInt(time.Now().UnixNano(), 16)
 				return chat.Message{
 					ID:   chatMessageID(msg),
 					From: chatUser(ch.client, msg.From),
