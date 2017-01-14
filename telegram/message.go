@@ -208,4 +208,7 @@ type Document struct {
 type Sticker struct {
 	// FileID is the unique identifier of this sticker's file.
 	FileID string `json:"file_id"`
+
+	// Thumb is an optional thumbnail photo.
+	Thumb *PhotoSize `json:"thumb"`
 }
