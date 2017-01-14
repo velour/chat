@@ -127,7 +127,12 @@ func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 		return chat.Message{}, nil
 	}
 
-	text = filterOutgoing(text)
+	if strings.HasPrefix(text, "/me ") {
+		text = strings.TrimPrefix(text, "/me ")
+		// Add a space before the closing _ so if text ends with a URL,
+		// Slack doesn't think that the closing _ is really part of the URL.
+		text = fmt.Sprintf("_%s _", text)
+	}
 
 	args := []string{
 		"channel=" + ch.ID,
@@ -154,20 +159,12 @@ func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 	return msg, nil
 }
 
-// filterOutgoing checks an outgoing Slack message body for network conversion issues
-func filterOutgoing(text string) string {
-	if strings.HasPrefix(text, "/me ") {
-		text = strings.TrimPrefix(text, "/me ")
-		text = fmt.Sprintf("_%s_", text)
-	}
-	return text
-}
-
 func (ch Channel) Send(ctx context.Context, text string) (chat.Message, error) {
 	return ch.send(ctx, nil, text)
 }
 
 func (ch Channel) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
+	log.Printf("Sending as: %+v %q\n", sendAs, text)
 	return ch.send(ctx, &sendAs, text)
 }
 
