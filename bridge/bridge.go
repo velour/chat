@@ -69,6 +69,8 @@ type Bridge struct {
 	nextID int
 
 	// log is a history of messages sent with or relayed by the bridge.
+	// The lock must be held to access log.
+	// However, it's entries are never modified; they can be read without the lock.
 	log []*logEntry
 }
 
@@ -456,6 +458,7 @@ func allChannelsExcept(b *Bridge, exclude chat.Channel) []chat.Channel {
 type findMessageFunc func(chat.Channel) *chat.Message
 
 func makeFindMessage(b *Bridge, origin chat.Channel, id chat.MessageID) findMessageFunc {
+	b.Lock()
 	var entry *logEntry
 outter:
 	for _, e := range b.log {
@@ -466,6 +469,7 @@ outter:
 			}
 		}
 	}
+	b.Unlock()
 	return func(ch chat.Channel) *chat.Message {
 		if entry == nil {
 			return nil
