@@ -80,15 +80,18 @@ type Message struct {
 	// Document indicates that the Message is a shared file.
 	Document *Document `json:"document"`
 
-	Game     *map[string]interface{}   `json:"game"`
-	Photo    *[]map[string]interface{} `json:"photo"`
-	Sticker  *map[string]interface{}   `json:"sticker"`
-	Video    *map[string]interface{}   `json:"video"`
-	Voice    *map[string]interface{}   `json:"voice"`
-	Caption  *string                   `json:"caption"`
-	Contact  *map[string]interface{}   `json:"contact"`
-	Location *map[string]interface{}   `json:"location"`
-	Venue    *map[string]interface{}   `json:"venue"`
+	Game  *map[string]interface{}   `json:"game"`
+	Photo *[]map[string]interface{} `json:"photo"`
+
+	// Sticker indicates that the Message is a sticker.
+	Sticker *Sticker `json:"sticker"`
+
+	Video    *map[string]interface{} `json:"video"`
+	Voice    *map[string]interface{} `json:"voice"`
+	Caption  *string                 `json:"caption"`
+	Contact  *map[string]interface{} `json:"contact"`
+	Location *map[string]interface{} `json:"location"`
+	Venue    *map[string]interface{} `json:"venue"`
 
 	// NewChatMember is the User information of a new chat member, added to the group.
 	NewChatMember *User `json:"new_chat_member"`
@@ -196,5 +199,11 @@ type File struct {
 // whether or not it's ready for download.
 type Document struct {
 	// FileID is the unique identifier of this file.
+	FileID string `json:"file_id"`
+}
+
+// A Sticker represents a sticker sent in a Message.
+type Sticker struct {
+	// FileID is the unique identifier of this sticker's file.
 	FileID string `json:"file_id"`
 }

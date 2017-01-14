@@ -110,16 +110,22 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 			return chat.Leave{Who: who}, nil
 
 		case msg.Document != nil:
-			url, ok := mediaURL(ch.client, msg.Document.FileID)
-			if !ok {
-				break
+			if url, ok := mediaURL(ch.client, msg.Document.FileID); ok {
+				return chat.Message{
+					ID:   chatMessageID(msg),
+					From: chatUser(ch.client, msg.From),
+					Text: "/me shared a file: " + url,
+				}, nil
 			}
-			msg := chat.Message{
-				ID:   chatMessageID(msg),
-				From: chatUser(ch.client, msg.From),
-				Text: "/me shared a file: " + url,
+
+		case msg.Sticker != nil:
+			if url, ok := mediaURL(ch.client, msg.Sticker.FileID); ok {
+				return chat.Message{
+					ID:   chatMessageID(msg),
+					From: chatUser(ch.client, msg.From),
+					Text: "/me sent a sticker: " + url,
+				}, nil
 			}
-			return msg, nil
 
 		case msg.Text != nil:
 			return chatMessage(ch.client, msg), nil
