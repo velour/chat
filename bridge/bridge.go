@@ -235,7 +235,15 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 	case chat.Edit:
 		findMessage := makeFindMessage(b, event.origin, ev.ID)
 		to := allChannelsExcept(b, event.origin)
-		return editMessage(ctx, to, findMessage, ev.Text)
+		msgs, err := editMessage(ctx, to, findMessage, ev.Text)
+		if err != nil {
+			return err
+		}
+		origMsg := *findMessage(event.origin)
+		origMsg.ID = ev.NewID
+		msgs = append(msgs, message{to: event.origin, msg: origMsg})
+		logMessage(b, &logEntry{origin: b, copies: msgs})
+		return nil
 
 	case chat.Join:
 		msg := ev.Who.Name() + " joined " + origName
@@ -390,24 +398,30 @@ func sendMessage(ctx context.Context,
 	return messages, nil
 }
 
-func editMessage(ctx context.Context, channels []chat.Channel, findMessage findMessageFunc, text string) error {
+func editMessage(ctx context.Context, channels []chat.Channel, findMessage findMessageFunc, text string) ([]message, error) {
 	var group errgroup.Group
-	for _, ch := range channels {
+	messages := make([]message, len(channels))
+	for i, ch := range channels {
 		ch := ch
 		group.Go(func() error {
 			msg := findMessage(ch)
 			if msg == nil {
 				return nil
 			}
-			var err error
-			if msg.ID, err = ch.Edit(ctx, msg.ID, text); err != nil {
+			newID, err := ch.Edit(ctx, msg.ID, text)
+			if err != nil {
 				return fmt.Errorf("failed to send edit to %s on %s: %s",
 					ch.Name(), ch.ServiceName(), err)
 			}
+			messages[i] = message{to: ch, msg: *msg}
+			messages[i].msg.ID = newID
 			return nil
 		})
 	}
-	return group.Wait()
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	return messages, nil
 }
 
 func deleteMessage(ctx context.Context, channels []chat.Channel, findMessage findMessageFunc) error {
