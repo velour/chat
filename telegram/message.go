@@ -80,8 +80,10 @@ type Message struct {
 	// Document indicates that the Message is a shared file.
 	Document *Document `json:"document"`
 
-	Game  *map[string]interface{}   `json:"game"`
-	Photo *[]map[string]interface{} `json:"photo"`
+	Game *map[string]interface{} `json:"game"`
+
+	// Photo indicates that the Message is a shared photo.
+	Photo *[]PhotoSize `json:"photo"`
 
 	// Sticker indicates that the Message is a sticker.
 	Sticker *Sticker `json:"sticker"`

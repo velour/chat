@@ -118,6 +118,15 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 				}, nil
 			}
 
+		case msg.Photo != nil:
+			if url, ok := mediaURL(ch.client, largestPhoto(*msg.Photo)); ok {
+				return chat.Message{
+					ID:   chatMessageID(msg),
+					From: chatUser(ch.client, msg.From),
+					Text: "/me shared a photo: " + url,
+				}, nil
+			}
+
 		case msg.Sticker != nil:
 			if url, ok := mediaURL(ch.client, msg.Sticker.FileID); ok {
 				return chat.Message{
