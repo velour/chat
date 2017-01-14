@@ -109,6 +109,18 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 			who := chatUser(ch.client, msg.NewChatMember)
 			return chat.Leave{Who: who}, nil
 
+		case msg.Document != nil:
+			url, ok := mediaURL(ch.client, msg.Document.FileID)
+			if !ok {
+				break
+			}
+			msg := chat.Message{
+				ID:   chatMessageID(msg),
+				From: chatUser(ch.client, msg.From),
+				Text: "/me shared a file: " + url,
+			}
+			return msg, nil
+
 		case msg.Text != nil:
 			return chatMessage(ch.client, msg), nil
 		}
@@ -214,18 +226,7 @@ func chatUser(c *Client, user *User) chat.User {
 	if nick == "" {
 		nick = name
 	}
-
-	var photoURL string
-	c.Lock()
-	if u, ok := c.users[user.ID]; c.localURL != nil && ok {
-		u.Lock()
-		newURL, _ := url.Parse(c.localURL.String())
-		newURL.Path = path.Join(newURL.Path, u.photo)
-		photoURL = newURL.String()
-		u.Unlock()
-	}
-	c.Unlock()
-
+	photoURL, _ := userPhotoURL(c, user.ID)
 	return chat.User{
 		ID:          chat.UserID(strconv.FormatInt(user.ID, 10)),
 		Nick:        nick,
@@ -233,4 +234,29 @@ func chatUser(c *Client, user *User) chat.User {
 		DisplayName: name,
 		PhotoURL:    photoURL,
 	}
+}
+
+func userPhotoURL(c *Client, userID int64) (string, bool) {
+	c.Lock()
+	defer c.Unlock()
+	u, ok := c.users[userID]
+	if c.localURL == nil || !ok {
+		return "", false
+	}
+	u.Lock()
+	defer u.Unlock()
+	newURL, _ := url.Parse(c.localURL.String())
+	newURL.Path = path.Join(newURL.Path, u.photo)
+	return newURL.String(), true
+}
+
+func mediaURL(c *Client, fileID string) (string, bool) {
+	c.Lock()
+	defer c.Unlock()
+	if c.localURL == nil {
+		return "", false
+	}
+	newURL, _ := url.Parse(c.localURL.String())
+	newURL.Path = path.Join(newURL.Path, fileID)
+	return newURL.String(), true
 }

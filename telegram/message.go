@@ -76,7 +76,10 @@ type Message struct {
 
 	Entities *[]map[string]interface{} `json:"entities"`
 	Audio    *map[string]interface{}   `json:"audio"`
-	Document *map[string]interface{}   `json:"document"`
+
+	// Document indicates that the Message is a shared file.
+	Document *Document `json:"document"`
+
 	Game     *map[string]interface{}   `json:"game"`
 	Photo    *[]map[string]interface{} `json:"photo"`
 	Sticker  *map[string]interface{}   `json:"sticker"`
@@ -162,7 +165,12 @@ type PhotoSize struct {
 	FileSize *int `json:"file_size"`
 }
 
-// A File represents a file.
+// A File represents a file ready to be downloaded.
+//
+// A File differs from a Document,
+// because a File represents a handle to file ready for download,
+// whereas a Document describes a file uploaded to Telegram,
+// whether or not it's ready for download.
 type File struct {
 	// FileID is the unique identifier of this file.
 	FileID string `json:"file_id"`
@@ -178,4 +186,15 @@ type File struct {
 	// from the time that the File was returned
 	// by the getFile method.
 	FilePath *string `json:"file_path"`
+}
+
+// A Document is a general file.
+//
+// A Document differs from a File,
+// because a File represents a handle to file ready for download,
+// whereas a Document describes a file uploaded to Telegram,
+// whether or not it's ready for download.
+type Document struct {
+	// FileID is the unique identifier of this file.
+	FileID string `json:"file_id"`
 }
