@@ -364,21 +364,13 @@ func rpc(ctx context.Context, c *Client, method string, req interface{}, resp in
 
 func _rpc(c *Client, method string, req interface{}, resp interface{}) error {
 	url := "https://api.telegram.org/bot" + c.token + "/" + method
-	var err error
-	var httpResp *http.Response
-	if req == nil {
-		httpResp, err = http.Get(url)
-	} else {
-		buf := bytes.NewBuffer(nil)
-		if err = json.NewEncoder(buf).Encode(req); err != nil {
-			return err
-		}
-		httpResp, err = http.Post(url, "application/json", buf)
-	}
+
+	httpResp, err := reqWithRetry(url, method, req)
 	if err != nil {
 		return err
 	}
 	defer httpResp.Body.Close()
+
 	result := struct {
 		OK          bool        `json:"ok"`
 		Description *string     `json:"description"`
@@ -396,5 +388,44 @@ func _rpc(c *Client, method string, req interface{}, resp interface{}) error {
 		return errors.New("request failed")
 	default:
 		return nil
+	}
+}
+
+const (
+	maxRetry   = 3
+	retryDelay = 250 * time.Millisecond
+)
+
+// reqWithRetry makes an HTTP request to the URL, retrying on a 500 response.
+func reqWithRetry(url, method string, req interface{}) (*http.Response, error) {
+	var err error
+	var data []byte
+	if req != nil {
+		if data, err = json.Marshal(req); err != nil {
+			return nil, err
+		}
+	}
+
+	var i int
+	var httpResp *http.Response
+	for {
+		if data != nil {
+			httpResp, err = http.Post(url, "application/json", bytes.NewBuffer(data))
+		} else {
+			httpResp, err = http.Get(url)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if c := httpResp.StatusCode; c < 500 || c >= 600 {
+			return httpResp, nil
+		}
+		i++
+		if i == maxRetry {
+			log.Printf("Method %s got %s response, giving up", method, httpResp.Status)
+			return httpResp, nil
+		}
+		log.Printf("Method %s got %s response, retrying", method, httpResp.Status)
+		time.Sleep(retryDelay)
 	}
 }
