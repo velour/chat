@@ -109,7 +109,7 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 			who := chatUser(ch.client, msg.NewChatMember)
 			return chat.Leave{Who: who}, nil
 
-		default:
+		case msg.Text != nil:
 			return chatMessage(ch.client, msg), nil
 		}
 
