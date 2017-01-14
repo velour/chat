@@ -84,6 +84,11 @@ func fixTag(findUser func(string) (string, bool), tag []rune) ([]rune, bool) {
 		}
 		return tag, true
 
+	case hasPrefix(tag, "#C"):
+		if i := indexRune(tag, '|'); i >= 0 {
+			return append([]rune{'#'}, tag[i+1:]...), true
+		}
+
 	case hasPrefix(tag, "http"):
 		if i := indexRune(tag, '|'); i >= 0 {
 			tag = tag[:i]

@@ -42,6 +42,11 @@ func TestFixTxt(t *testing.T) {
 			want: "someone",
 		},
 		{
+			name: "Hash tag",
+			text: "prefix <#C1A2B3C4D|theclub> suffix",
+			want: "prefix #theclub suffix",
+		},
+		{
 			name: "Only a link",
 			text: "<https://twitter.com/rob_pike/status/816766400257658880>",
 			want: "https://twitter.com/rob_pike/status/816766400257658880",
