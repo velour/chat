@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"image/png"
 	"io"
 	"io/ioutil"
 	"log"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/velour/chat"
+	"golang.org/x/image/webp"
 )
 
 const (
@@ -306,9 +308,38 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		return
 	}
-	if _, err := io.Copy(w, resp.Body); err != nil {
+	if err := copyResponse(w, resp.Body, resp.Header); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func copyResponse(w io.Writer, body io.Reader, header map[string][]string) error {
+	var mime string
+	if ms, ok := header["Content-Type"]; ok && len(ms) > 0 {
+		mime = ms[0]
+	}
+	if mime == "application/octet-stream" {
+		log.Printf("Trying to determine Content-Type from application/octet-stream")
+		// Try to detect a more specific Content-Type.
+		data, err := ioutil.ReadAll(io.LimitReader(body, 512))
+		if err != nil {
+			log.Printf("Failed to keep 512 bytes to find Content-Type: %s", err)
+		} else {
+			mime = http.DetectContentType(data)
+		}
+		body = io.MultiReader(bytes.NewBuffer(data), body)
+	}
+
+	if mime == "image/webp" {
+		// Re-encode webp images as PNG, because Slack won't inline webp.
+		img, err := webp.Decode(body)
+		if err == nil {
+			return png.Encode(w, img)
+		}
+		log.Printf("Failed to decode webp image: %s", err)
+	}
+	_, err := io.Copy(w, body)
+	return err
 }
 
 func getMediaURL(ctx context.Context, c *Client, fileID string) (string, error) {
