@@ -252,19 +252,17 @@ func getProfilePhoto(ctx context.Context, c *Client, userID int64) (string, erro
 	if len(resp.Photos) == 0 {
 		return "", nil
 	}
-	// Select the smallest photo, under the assumption
-	// that it is least likely to have resizing artifacts.
-	return smallestPhoto(resp.Photos[0]), nil
+	return largestPhoto(resp.Photos[0]), nil
 }
 
-func smallestPhoto(photos []PhotoSize) string {
+func largestPhoto(photos []PhotoSize) string {
 	size := -1
 	var photo string
 	for _, ps := range photos {
 		if ps.FileSize != nil && *ps.FileSize >= fileSizeLimit {
 			continue
 		}
-		if sz := ps.Width * ps.Height; size < 0 || sz < size {
+		if sz := ps.Width * ps.Height; size < 0 || sz > size {
 			photo = ps.FileID
 			size = sz
 		}
