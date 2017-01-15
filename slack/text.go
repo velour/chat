@@ -3,6 +3,8 @@ package slack
 import (
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/velour/chat"
 )
 
 // fixText strips all of the Slack-specific annotations from message text,
@@ -14,8 +16,9 @@ import (
 // • Strips < and > surrounding links.
 // • :default-emoji: is replaced by the UTF-8 of the emoji.
 // This works for the default emoji set, but not custom emoji.
-func fixText(findUser func(id string) (string, bool), text string) string {
+func fixText(findUser func(id string) (string, bool), findEmoji func(emoji string) (string, bool), text string) (string, chat.Attachments) {
 	var output []rune
+	var attachments chat.Attachments
 	for len(text) > 0 {
 		r, i := utf8.DecodeRuneInString(text)
 		text = text[i:]
@@ -52,6 +55,15 @@ func fixText(findUser func(id string) (string, bool), text string) string {
 					if e, ok := defaultEmoji[string(emoji)]; ok {
 						output = append(output, []rune(e)...)
 						break
+					} else {
+						if emojiURL, ok := findEmoji(string(emoji)); ok {
+							attachments = append(attachments, chat.Attachment{
+								Text: string(emoji),
+								Type: chat.AttachmentEmoji,
+								URL:  emojiURL,
+							})
+							break
+						}
 					}
 					fallthrough
 				case unicode.IsSpace(r) || len(text) == 0:
@@ -68,7 +80,7 @@ func fixText(findUser func(id string) (string, bool), text string) string {
 			output = append(output, r)
 		}
 	}
-	return string(output)
+	return string(output), attachments
 }
 
 func fixTag(findUser func(string) (string, bool), tag []rune) ([]rune, bool) {

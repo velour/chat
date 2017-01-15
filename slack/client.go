@@ -47,6 +47,7 @@ type Client struct {
 	channels map[string]Channel
 	users    map[chat.UserID]chat.User
 	media    map[string]File
+	emoji    map[string]string
 	nextID   uint64
 	localURL *url.URL
 }
@@ -62,6 +63,7 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 		channels:  make(map[string]Channel),
 		users:     make(map[chat.UserID]chat.User),
 		media:     make(map[string]File),
+		emoji:     make(map[string]string),
 	}
 
 	var resp struct {
@@ -460,4 +462,29 @@ func decodeJSON(r io.Reader, v interface{}) error {
 		return err
 	}
 	return nil
+}
+
+// getEmoji fetches all emoji from the server and updates a local
+// cache of stored emoji URLs
+func (c *Client) getEmoji(ctx context.Context, emoji string) (string, error) {
+	c.Lock()
+	defer c.Unlock()
+
+	if e, ok := c.emoji[emoji]; ok {
+		return e, nil
+	}
+
+	var resp EmojiList
+	if err := rpc(ctx, c, &resp,
+		"emoji.list"); err != nil {
+		return "", err
+	}
+	for k, v := range resp.Emoji {
+		c.emoji[k] = v
+	}
+	if e, ok := c.emoji[emoji]; ok {
+		return e, nil
+	} else {
+		return "", fmt.Errorf("Emoji not found")
+	}
 }

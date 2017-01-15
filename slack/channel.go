@@ -113,8 +113,16 @@ func (ch *Channel) chatEvent(ctx context.Context, u *Update) (interface{}, error
 			}
 			return u.Name(), true
 		}
-		text := fixText(findUser, html.UnescapeString(u.Text))
-		return chat.Message{ID: id, From: user, Text: text}, nil
+		findEmoji := func(emoji string) (string, bool) {
+			e, err := ch.client.getEmoji(ctx, emoji)
+			if err != nil {
+				log.Printf("Failed to find emoji: %s: %s", emoji, err)
+				return "", false
+			}
+			return e, true
+		}
+		text, attachments := fixText(findUser, findEmoji, html.UnescapeString(u.Text))
+		return chat.Message{ID: id, From: user, Text: text, Attachments: attachments}, nil
 	}
 	return nil, nil
 }

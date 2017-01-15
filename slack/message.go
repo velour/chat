@@ -63,3 +63,11 @@ type User struct {
 	}
 	// BUG(eaburns): Add remaining User object fields.
 }
+
+// EmojiList is a response from the emoji.list RPC call
+type EmojiList struct {
+	ResponseHeader
+
+	// Emoji are returned as a name/URL map
+	Emoji map[string]string `json:"emoji"`
+}

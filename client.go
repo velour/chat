@@ -70,6 +70,33 @@ type Channel interface {
 	ReplyAs(ctx context.Context, sendAs User, replyTo Message, text string) (Message, error)
 }
 
+type AttachmentSpecifier int
+
+const (
+	// Where possible Image attachments should be embedded with text description
+	AttachmentImage AttachmentSpecifier = iota
+
+	// Emoji should be text replacements
+	AttachmentEmoji
+
+	// Links should be embedable preview links if reasonable
+	AttachmentLink
+)
+
+// An Attachment specifies a media item to be added by the sending client
+type Attachment struct {
+	// Name is a textual description of the attachment
+	Text string
+
+	// Type specifies how the sender should handle the attachment
+	Type AttachmentSpecifier
+
+	// URL specifies where the attachment may be found
+	URL string
+}
+
+type Attachments []Attachment
+
 // A MessageID is a unique string representing a sent message.
 type MessageID string
 
@@ -83,6 +110,9 @@ type Message struct {
 
 	// Text is the text of the Message.
 	Text string
+
+	// Attachments specify extra media attached to a message
+	Attachments Attachments
 }
 
 // A Delete is an event describing a message deleted by a user.
