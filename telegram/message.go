@@ -212,3 +212,12 @@ type Sticker struct {
 	// Thumb is an optional thumbnail photo.
 	Thumb *PhotoSize `json:"thumb"`
 }
+
+// A ChatMember is a User who is a member of a chat.
+type ChatMember struct {
+	// User is the user's information.
+	User User `json:"user"`
+
+	// Status is one of “creator”, “administrator”, “member”, “left” or “kicked”.
+	Status string `json:"status"`
+}

@@ -203,3 +203,13 @@ func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string)
 func (ch *channel) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Message, text string) (chat.Message, error) {
 	return ch.reply(ctx, &sendAs, replyTo, text)
 }
+
+func (ch *channel) Who(context.Context) ([]chat.User, error) {
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+	var us []chat.User
+	for nick, _ := range ch.users {
+		us = append(us, chatUser(ch, nick))
+	}
+	return us, nil
+}

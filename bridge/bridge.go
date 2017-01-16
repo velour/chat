@@ -354,6 +354,31 @@ func (b *Bridge) Edit(_ context.Context, id chat.MessageID, _ string) (chat.Mess
 	return id, nil
 }
 
+func (b *Bridge) Who(ctx context.Context) ([]chat.User, error) {
+	var group errgroup.Group
+	userLists := make([][]chat.User, len(b.channels))
+	for i, ch := range b.channels {
+		i, ch := i, ch
+		group.Go(func() error {
+			var err error
+			userLists[i], err = ch.Who(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get who from %s on %s: %s\n",
+					ch.Name(), ch.ServiceName(), err)
+			}
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	var users []chat.User
+	for _, list := range userLists {
+		users = append(users, list...)
+	}
+	return users, nil
+}
+
 // sendMessage sends a message to multiple channels,
 // returning a slice of the messages.
 func sendMessage(ctx context.Context,

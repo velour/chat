@@ -102,18 +102,18 @@ func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 			return chat.Reply{ReplyTo: replyTo, Reply: reply}, nil
 
 		case msg.NewChatMember != nil:
-			who := chatUser(ch, msg.NewChatMember)
+			who := chatUser(ch, *msg.NewChatMember)
 			return chat.Join{Who: who}, nil
 
 		case msg.LeftChatMember != nil:
-			who := chatUser(ch, msg.NewChatMember)
+			who := chatUser(ch, *msg.NewChatMember)
 			return chat.Leave{Who: who}, nil
 
 		case msg.Document != nil:
 			if url, ok := mediaURL(ch.client, msg.Document.FileID); ok {
 				return chat.Message{
 					ID:   chatMessageID(msg),
-					From: chatUser(ch, msg.From),
+					From: chatUser(ch, *msg.From),
 					Text: "/me shared a file: " + url,
 				}, nil
 			}
@@ -122,7 +122,7 @@ func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 			if url, ok := mediaURL(ch.client, largestPhoto(*msg.Photo)); ok {
 				return chat.Message{
 					ID:   chatMessageID(msg),
-					From: chatUser(ch, msg.From),
+					From: chatUser(ch, *msg.From),
 					Text: "/me shared a photo: " + url,
 				}, nil
 			}
@@ -139,7 +139,7 @@ func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 				url = url + "?nonce=" + strconv.FormatInt(time.Now().UnixNano(), 16)
 				return chat.Message{
 					ID:   chatMessageID(msg),
-					From: chatUser(ch, msg.From),
+					From: chatUser(ch, *msg.From),
 					Text: "/me sent a sticker: " + url,
 				}, nil
 			}
@@ -220,6 +220,29 @@ func (ch *channel) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.M
 	return ch.send(ctx, &sendAs, &replyTo, text)
 }
 
+func (ch *channel) Who(ctx context.Context) ([]chat.User, error) {
+	// The bot API dosen't support getting all user, just admins.
+	// However, in non-supergroups, all users are often admins.
+	cms, err := getChatAdministrators(ctx, ch.client, ch.chat.ID)
+	if err != nil {
+		return nil, err
+	}
+	var users []chat.User
+	for _, cm := range cms {
+		ch.client.Lock()
+		u, ok := ch.client.users[cm.User.ID]
+		ch.client.Unlock()
+		if !ok {
+			continue
+		}
+		u.Lock()
+		user := u.User
+		u.Unlock()
+		users = append(users, chatUser(ch, user))
+	}
+	return users, nil
+}
+
 func chatMessageID(m *Message) chat.MessageID {
 	return chat.MessageID(strconv.FormatUint(m.MessageID, 10))
 }
@@ -236,13 +259,27 @@ func messageText(m *Message) string {
 func chatMessage(ch *channel, m *Message) chat.Message {
 	return chat.Message{
 		ID:   chatMessageID(m),
-		From: chatUser(ch, m.From),
+		From: chatUser(ch, *m.From),
 		Text: messageText(m),
 	}
 }
 
-// chatUser assumes that u != nil.
-func chatUser(ch *channel, user *User) chat.User {
+func chatUserByID(ch *channel, userID int64) (chat.User, bool) {
+	ch.client.Lock()
+	u, ok := ch.client.users[userID]
+	ch.client.Unlock()
+	if !ok {
+		return chat.User{}, false
+	}
+	u.Lock()
+	user := u.User
+	u.Unlock()
+	return chatUser(ch, user), true
+}
+
+// chatUser returns a chat.User from a User.
+// Must not be called with the ch.client Lock held.
+func chatUser(ch *channel, user User) chat.User {
 	name := strings.TrimSpace(user.FirstName + " " + user.LastName)
 	nick := user.Username
 	if nick == "" {

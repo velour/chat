@@ -226,6 +226,27 @@ func update(ctx context.Context, c *Client, u Update) {
 	}
 }
 
+// getChatAdministrators returns ChatMembers for each administrator in the group,
+// adding newly discovered Users to the users map.
+func getChatAdministrators(ctx context.Context, c *Client, chatID int64) ([]ChatMember, error) {
+	req := map[string]interface{}{"chat_id": chatID}
+	var resp []ChatMember
+	if err := rpc(ctx, c, "getChatAdministrators", req, &resp); err != nil {
+		return nil, err
+	}
+	c.Lock()
+	defer c.Unlock()
+	for _, cm := range resp {
+		u, ok := c.users[cm.User.ID]
+		if !ok {
+			u = &user{User: cm.User}
+			c.users[cm.User.ID] = u
+		}
+		go updateUser(ctx, c, u, cm.User)
+	}
+	return resp, nil
+}
+
 func updateUser(ctx context.Context, c *Client, u *user, latest User) {
 	u.Lock()
 	defer u.Unlock()

@@ -34,6 +34,9 @@ type Channel interface {
 	// Receive receives the next event from the Channel.
 	Receive(ctx context.Context) (Event, error)
 
+	// Who returns the Users connected to the Channel.
+	Who(ctx context.Context) ([]User, error)
+
 	// Send sends text to the Channel and returns the sent Message.
 	Send(ctx context.Context, text string) (Message, error)
 
