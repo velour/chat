@@ -353,7 +353,7 @@ func (b *Bridge) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Mes
 // Delete is a no-op for Bridge.
 func (b *Bridge) Delete(context.Context, chat.MessageID) error { return nil }
 
-// Edit is a no-op fro Bridge; it simply returns the given MessageID.
+// Edit is a no-op for Bridge; it simply returns the given MessageID.
 func (b *Bridge) Edit(_ context.Context, id chat.MessageID, _ string) (chat.MessageID, error) {
 	return id, nil
 }
