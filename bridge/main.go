@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"path"
 
-	"github.com/eaburns/pretty"
 	"github.com/golang/sync/errgroup"
 	"github.com/velour/chat"
 	"github.com/velour/chat/bridge"
@@ -136,8 +135,7 @@ loop:
 		if err != nil {
 			panic(err)
 		}
-		pretty.Print(ev)
-		fmt.Println("")
+		fmt.Printf("%#v\n", ev)
 		switch m := ev.(type) {
 		case chat.Message:
 			switch m.Text {
