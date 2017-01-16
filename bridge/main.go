@@ -85,7 +85,6 @@ func main() {
 		}
 		baseURL.Path = path.Join(baseURL.Path, telegramMediaPath)
 		telegramClient.SetLocalURL(*baseURL)
-		go http.ListenAndServe(*httpServe, nil)
 
 		channels = append(channels, telegramChannel)
 	}
@@ -115,6 +114,8 @@ func main() {
 
 		channels = append(channels, slackChannel)
 	}
+
+	go http.ListenAndServe(*httpServe, nil)
 
 	b := bridge.New(channels...)
 	log.Println("Bridge is up and running.")
