@@ -110,7 +110,7 @@ func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 			return chat.Leave{Who: who}, nil
 
 		case msg.Document != nil:
-			if url, ok := mediaURL(ch.client, msg.Document.FileID); ok {
+			if url := mediaURL(ch.client, msg.Document.FileID); url != "" {
 				return chat.Message{
 					ID:   chatMessageID(msg),
 					From: chatUser(ch, *msg.From),
@@ -119,7 +119,7 @@ func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 			}
 
 		case msg.Photo != nil:
-			if url, ok := mediaURL(ch.client, largestPhoto(*msg.Photo)); ok {
+			if url := mediaURL(ch.client, largestPhoto(*msg.Photo)); url != "" {
 				return chat.Message{
 					ID:   chatMessageID(msg),
 					From: chatUser(ch, *msg.From),
@@ -132,15 +132,31 @@ func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 			if msg.Sticker.Thumb != nil {
 				fileID = msg.Sticker.Thumb.FileID
 			}
-			if url, ok := mediaURL(ch.client, fileID); ok {
+			var icon string
+			if msg.Sticker.Emoji != nil {
+				icon = *msg.Sticker.Emoji
+			}
+			url := mediaURL(ch.client, fileID)
+			if url != "" {
 				// Slack does not unfurl URLs posted within the last hour.
 				// But we want stickers to unfurl each time they are posted.
 				// So, we add a nonce to the end, makeing each unique.
 				url = url + "?nonce=" + strconv.FormatInt(time.Now().UnixNano(), 16)
+			}
+			var text string
+			switch {
+			case icon != "" && url != "":
+				text = "/me sent a sticker " + icon + ": " + url
+			case icon != "" && url == "":
+				text = "/me sent a sticker " + icon
+			case icon == "" && url != "":
+				text = "/me sent a sticker: " + url
+			}
+			if text != "" {
 				return chat.Message{
 					ID:   chatMessageID(msg),
 					From: chatUser(ch, *msg.From),
-					Text: "/me sent a sticker: " + url,
+					Text: text,
 				}, nil
 			}
 
@@ -310,13 +326,15 @@ func userPhotoURL(c *Client, userID int64) (string, bool) {
 	return newURL.String(), true
 }
 
-func mediaURL(c *Client, fileID string) (string, bool) {
+// mediaURL returns the URL for the fileID if the client has localURL set,
+// otherwise it returns the empty string.
+func mediaURL(c *Client, fileID string) string {
 	c.Lock()
 	defer c.Unlock()
 	if c.localURL == nil {
-		return "", false
+		return ""
 	}
 	newURL, _ := url.Parse(c.localURL.String())
 	newURL.Path = path.Join(newURL.Path, fileID)
-	return newURL.String(), true
+	return newURL.String()
 }

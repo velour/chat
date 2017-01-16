@@ -211,6 +211,9 @@ type Sticker struct {
 
 	// Thumb is an optional thumbnail photo.
 	Thumb *PhotoSize `json:"thumb"`
+
+	// Emoji is the optional emoticon associated with the sticker.
+	Emoji *string `json:"emoji"`
 }
 
 // A ChatMember is a User who is a member of a chat.
