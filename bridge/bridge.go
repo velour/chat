@@ -404,7 +404,7 @@ func editMessage(ctx context.Context, channels []chat.Channel, findMessage findM
 	var group errgroup.Group
 	messages := make([]message, len(channels))
 	for i, ch := range channels {
-		ch := ch
+		i, ch := i, ch
 		group.Go(func() error {
 			msg := findMessage(ch)
 			if msg == nil {
