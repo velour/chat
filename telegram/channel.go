@@ -162,7 +162,7 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, replyTo *chat.Me
 		const mePrefix = "/me "
 		name := sendAs.Name()
 		if strings.HasPrefix(text, mePrefix) {
-			htmlText = "<b>" + name + "</b> " + strings.TrimPrefix(htmlText, mePrefix)
+			htmlText = "<b>" + name + "</b> <em>" + strings.TrimPrefix(htmlText, mePrefix) + "</em>"
 		} else {
 			htmlText = "<b>" + name + ":</b> " + htmlText
 		}
