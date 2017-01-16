@@ -93,14 +93,11 @@ type Delete struct {
 
 // An Edit is an event describing a message edited by a user.
 type Edit struct {
-	// ID is the unique identifier of the message that was edited.
-	ID MessageID
+	// OrigID is the unique identifier of the message that was edited.
+	OrigID MessageID
 
-	// NewID is unique identifier of the message after editing.
-	NewID MessageID
-
-	// Text is the new text of the message.
-	Text string
+	// New is the new Message.
+	New Message
 }
 
 // A Reply is an event describing a user replying to a message.

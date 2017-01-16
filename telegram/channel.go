@@ -151,8 +151,7 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 	case u.EditedMessage != nil:
 		msg := u.EditedMessage
 		id := chatMessageID(msg)
-		text := messageText(msg)
-		return chat.Edit{ID: id, NewID: id, Text: text}, nil
+		return chat.Edit{OrigID: id, New: chatMessage(ch, msg)}, nil
 	}
 	return nil, nil
 }

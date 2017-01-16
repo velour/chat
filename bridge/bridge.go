@@ -235,14 +235,14 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 		return deleteMessage(ctx, to, findMessage)
 
 	case chat.Edit:
-		findMessage := makeFindMessage(b, event.origin, ev.ID)
+		findMessage := makeFindMessage(b, event.origin, ev.OrigID)
 		to := allChannelsExcept(b, event.origin)
-		msgs, err := editMessage(ctx, to, findMessage, ev.Text)
+		msgs, err := editMessage(ctx, to, findMessage, ev.New.Text)
 		if err != nil {
 			return err
 		}
 		origMsg := *findMessage(event.origin)
-		origMsg.ID = ev.NewID
+		origMsg.ID = ev.New.ID
 		msgs = append(msgs, message{to: event.origin, msg: origMsg})
 		logMessage(b, &logEntry{origin: b, copies: msgs})
 		return nil
