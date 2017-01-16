@@ -87,6 +87,9 @@ type Message struct {
 
 // A Delete is an event describing a message deleted by a user.
 type Delete struct {
+	// Who is the User who deleted the message.
+	Who User
+
 	// ID is the ID of the deleted message.
 	ID MessageID
 }
