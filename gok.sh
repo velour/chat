@@ -26,6 +26,7 @@ go test -test.timeout=10s ./... 2>&1 > $o || fail
 
 echo Linting
 golint .\
+	| grep -v '.Origin should have comment'\
 	> $o 2>&1
 # Silly: diff the grepped golint output with empty.
 # If it's non-empty, error, otherwise succeed.

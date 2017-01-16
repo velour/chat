@@ -18,6 +18,9 @@ type Client interface {
 }
 
 // A Channel is a handle to a channel joined by the Client.
+//
+// Channels are expected to be comparable with ==.
+// The simplest way to achieve this is to implement Channel with a pointer.
 type Channel interface {
 	// Name returns the Channel's name.
 	Name() string
@@ -29,7 +32,7 @@ type Channel interface {
 	ServiceName() string
 
 	// Receive receives the next event from the Channel.
-	Receive(ctx context.Context) (interface{}, error)
+	Receive(ctx context.Context) (Event, error)
 
 	// Send sends text to the Channel and returns the sent Message.
 	Send(ctx context.Context, text string) (Message, error)
@@ -70,6 +73,14 @@ type Channel interface {
 	ReplyAs(ctx context.Context, sendAs User, replyTo Message, text string) (Message, error)
 }
 
+// An Event signifies something happening on a Channel.
+type Event interface {
+	// Origin is the Channel that originated the Event.
+	// Events may be forwarded, for example through a Bridge.
+	// However, Origin is always the originator of the Event.
+	Origin() Channel
+}
+
 // A MessageID is a unique string representing a sent message.
 type MessageID string
 
@@ -85,6 +96,8 @@ type Message struct {
 	Text string
 }
 
+func (e Message) Origin() Channel { return e.From.Channel }
+
 // A Delete is an event describing a message deleted by a user.
 type Delete struct {
 	// Who is the User who deleted the message.
@@ -93,6 +106,8 @@ type Delete struct {
 	// ID is the ID of the deleted message.
 	ID MessageID
 }
+
+func (e Delete) Origin() Channel { return e.Who.Channel }
 
 // An Edit is an event describing a message edited by a user.
 type Edit struct {
@@ -103,6 +118,8 @@ type Edit struct {
 	New Message
 }
 
+func (e Edit) Origin() Channel { return e.New.From.Channel }
+
 // A Reply is an event describing a user replying to a message.
 type Reply struct {
 	// ReplyTo is the message that was replied to.
@@ -112,17 +129,23 @@ type Reply struct {
 	Reply Message
 }
 
+func (e Reply) Origin() Channel { return e.Reply.From.Channel }
+
 // A Join is an event describing a user joining a channel.
 type Join struct {
 	// Who is the User who joined.
 	Who User
 }
 
+func (e Join) Origin() Channel { return e.Who.Channel }
+
 // A Leave is an event describing a user leaving a channel.
 type Leave struct {
 	// Who is the User who parted.
 	Who User
 }
+
+func (e Leave) Origin() Channel { return e.Who.Channel }
 
 // A Rename is an event describing a user info change.
 type Rename struct {
@@ -131,6 +154,8 @@ type Rename struct {
 	// To is the new User information.
 	To User
 }
+
+func (e Rename) Origin() Channel { return e.To.Channel }
 
 // A UserID is a unique string representing a user.
 type UserID string

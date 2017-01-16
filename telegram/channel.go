@@ -59,7 +59,7 @@ func (ch *channel) Name() string {
 
 func (ch *channel) ServiceName() string { return "Telegram" }
 
-func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
+func (ch *channel) Receive(ctx context.Context) (chat.Event, error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -83,7 +83,7 @@ func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 // chatEvent returns the chat event corresponding to the update.
 // If the Update cannot be mapped, nil is returned with a nil error.
 // This signifies an Update that sholud be ignored.
-func chatEvent(ch *channel, u *Update) (interface{}, error) {
+func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 	switch {
 	case u.Message != nil && u.Message.Time().Before(ch.created):
 	case u.EditedMessage != nil && u.EditedMessage.Time().Before(ch.created):

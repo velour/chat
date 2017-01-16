@@ -38,12 +38,12 @@ type channel struct {
 	// of events from the Client to this channel.
 	// The Client publishes events without blocking.
 	// To maintain order, only one goroutine can publish to in at a time.
-	in chan []interface{}
+	in chan []chat.Event
 
 	// Out publishes events to the Receive method.
 	// If the in channel is closed, out is closed.
 	// after all pending events have been Received.
-	out chan interface{}
+	out chan chat.Event
 
 	mu sync.Mutex
 	// Users is the set of all users in this channel.
@@ -58,8 +58,8 @@ func newChannel(client *Client, name string) *channel {
 		name:     name,
 		inWho:    make(chan []string, 1),
 		inOrigin: make(chan string, 1),
-		in:       make(chan []interface{}, 1),
-		out:      make(chan interface{}),
+		in:       make(chan []chat.Event, 1),
+		out:      make(chan chat.Event),
 		users:    make(map[string]bool),
 	}
 
@@ -90,9 +90,9 @@ func newChannel(client *Client, name string) *channel {
 
 // sendEvent, sends an event to the channel.
 // The caller must already hold the channel's lock.
-func sendEvent(ch *channel, event interface{}) {
+func sendEvent(ch *channel, event chat.Event) {
 	select {
-	case ch.in <- []interface{}{event}:
+	case ch.in <- []chat.Event{event}:
 	case es := <-ch.in:
 		ch.in <- append(es, event)
 	}
@@ -101,7 +101,7 @@ func sendEvent(ch *channel, event interface{}) {
 func (ch *channel) Name() string        { return ch.name }
 func (ch *channel) ServiceName() string { return "IRC (" + ch.client.server + ")" }
 
-func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
+func (ch *channel) Receive(ctx context.Context) (chat.Event, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()

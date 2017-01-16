@@ -34,16 +34,16 @@ var _ chat.Channel = &Bridge{}
 // 2) multiplexed to the Bridge.Receive method.
 type Bridge struct {
 	// eventsMux multiplexes events incoming from the bridged channels.
-	eventsMux chan event
+	eventsMux chan chat.Event
 
 	// recvIn simulates an infinite buffered channel
 	// of events, multiplexed from the bridged channels.
 	// The mux goroutine publishes events to this channel without blocking.
 	// The recv goroutine forwards the events to recvOut.
-	recvIn chan []interface{}
+	recvIn chan []chat.Event
 
 	// recvOut publishes evetns to the Receive method.
-	recvOut chan interface{}
+	recvOut chan chat.Event
 
 	// pollError reports errors from the channel polling goroutines to the mux goroutine.
 	// If the mux goroutine recieves a pollError, it forwards the error to closeError,
@@ -87,9 +87,9 @@ type message struct {
 // New returns a new bridge that bridges a set of channels.
 func New(channels ...chat.Channel) *Bridge {
 	b := &Bridge{
-		eventsMux:  make(chan event, 100),
-		recvIn:     make(chan []interface{}, 1),
-		recvOut:    make(chan interface{}),
+		eventsMux:  make(chan chat.Event, 100),
+		recvIn:     make(chan []chat.Event, 1),
+		recvOut:    make(chan chat.Event),
 		pollError:  make(chan error, 1),
 		closeError: make(chan error, 1),
 		closed:     make(chan struct{}),
@@ -120,11 +120,6 @@ func (b *Bridge) Close(ctx context.Context) error {
 	return err
 }
 
-type event struct {
-	origin chat.Channel
-	what   interface{}
-}
-
 // mux multiplexes:
 // events incoming from bridged channels,
 // errors coming from channel polling,
@@ -145,9 +140,9 @@ func mux(ctx context.Context, cancel context.CancelFunc, b *Bridge) {
 				return
 			}
 			select {
-			case b.recvIn <- []interface{}{ev.what}:
+			case b.recvIn <- []chat.Event{ev}:
 			case evs := <-b.recvIn:
-				b.recvIn <- append(evs, ev.what)
+				b.recvIn <- append(evs, ev)
 			}
 		}
 	}
@@ -190,7 +185,7 @@ func poll(ctx context.Context, b *Bridge, ch chat.Channel) {
 			}
 			return
 		default:
-			b.eventsMux <- event{origin: ch, what: ev}
+			b.eventsMux <- ev
 		}
 	}
 }
@@ -204,58 +199,59 @@ func logMessage(b *Bridge, entry *logEntry) {
 	b.Unlock()
 }
 
-func relay(ctx context.Context, b *Bridge, event event) error {
-	origName := event.origin.Name() + " on " + event.origin.ServiceName()
-	switch ev := event.what.(type) {
+func relay(ctx context.Context, b *Bridge, event chat.Event) error {
+	origin := event.Origin()
+	origName := origin.Name() + " on " + origin.ServiceName()
+	switch ev := event.(type) {
 	case chat.Message:
 		var err error
-		to := allChannelsExcept(b, event.origin)
+		to := allChannelsExcept(b, origin)
 		msgs, err := sendMessage(ctx, to, &ev.From, nil, ev.Text)
 		if err != nil {
 			return err
 		}
-		msgs = append(msgs, message{to: event.origin, msg: ev})
-		logMessage(b, &logEntry{origin: event.origin, copies: msgs})
+		msgs = append(msgs, message{to: origin, msg: ev})
+		logMessage(b, &logEntry{origin: origin, copies: msgs})
 		return nil
 
 	case chat.Reply:
-		findMessage := makeFindMessage(b, event.origin, ev.ReplyTo.ID)
-		to := allChannelsExcept(b, event.origin)
+		findMessage := makeFindMessage(b, origin, ev.ReplyTo.ID)
+		to := allChannelsExcept(b, origin)
 		msgs, err := sendMessage(ctx, to, &ev.Reply.From, findMessage, ev.Reply.Text)
 		if err != nil {
 			return err
 		}
-		msgs = append(msgs, message{to: event.origin, msg: ev.Reply})
+		msgs = append(msgs, message{to: origin, msg: ev.Reply})
 		logMessage(b, &logEntry{origin: b, copies: msgs})
 		return nil
 
 	case chat.Delete:
-		findMessage := makeFindMessage(b, event.origin, ev.ID)
-		to := allChannelsExcept(b, event.origin)
+		findMessage := makeFindMessage(b, origin, ev.ID)
+		to := allChannelsExcept(b, origin)
 		return deleteMessage(ctx, to, findMessage)
 
 	case chat.Edit:
-		findMessage := makeFindMessage(b, event.origin, ev.OrigID)
-		to := allChannelsExcept(b, event.origin)
+		findMessage := makeFindMessage(b, origin, ev.OrigID)
+		to := allChannelsExcept(b, origin)
 		msgs, err := editMessage(ctx, to, findMessage, ev.New.Text)
 		if err != nil {
 			return err
 		}
-		origMsg := *findMessage(event.origin)
+		origMsg := *findMessage(origin)
 		origMsg.ID = ev.New.ID
-		msgs = append(msgs, message{to: event.origin, msg: origMsg})
+		msgs = append(msgs, message{to: origin, msg: origMsg})
 		logMessage(b, &logEntry{origin: b, copies: msgs})
 		return nil
 
 	case chat.Join:
 		msg := ev.Who.Name() + " joined " + origName
-		to := allChannelsExcept(b, event.origin)
+		to := allChannelsExcept(b, origin)
 		_, err := sendMessage(ctx, to, nil, nil, msg)
 		return err
 
 	case chat.Leave:
 		msg := ev.Who.Name() + " left " + origName
-		to := allChannelsExcept(b, event.origin)
+		to := allChannelsExcept(b, origin)
 		_, err := sendMessage(ctx, to, nil, nil, msg)
 		return err
 
@@ -266,7 +262,7 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 			break
 		}
 		msg := old + " renamed to " + new + " in " + origName
-		to := allChannelsExcept(b, event.origin)
+		to := allChannelsExcept(b, origin)
 		_, err := sendMessage(ctx, to, nil, nil, msg)
 		return err
 	}
@@ -274,7 +270,7 @@ func relay(ctx context.Context, b *Bridge, event event) error {
 }
 
 // Receive returns the next event from any of the bridged channels.
-func (b *Bridge) Receive(ctx context.Context) (interface{}, error) {
+func (b *Bridge) Receive(ctx context.Context) (chat.Event, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()

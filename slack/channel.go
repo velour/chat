@@ -52,7 +52,7 @@ func initChannel(c *Client, ch *channel) {
 func (ch *channel) Name() string        { return ch.ChannelName }
 func (ch *channel) ServiceName() string { return ch.client.domain + ".slack.com" }
 
-func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
+func (ch *channel) Receive(ctx context.Context) (chat.Event, error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -104,7 +104,7 @@ func getUser(ctx context.Context, ch *channel, id chat.UserID) (chat.User, error
 // chatEvent returns the chat event corresponding to the update.
 // If the Update cannot be mapped, nil is returned with a nil error.
 // This signifies an Update that sholud be ignored.
-func (ch *channel) chatEvent(ctx context.Context, u *Update) (interface{}, error) {
+func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error) {
 	if u.User == "" {
 		// ignore updates without users.
 		return nil, nil
