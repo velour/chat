@@ -44,7 +44,7 @@ type Client struct {
 	httpClient http.Client
 
 	sync.Mutex
-	channels map[string]Channel
+	channels map[string]*channel
 	users    map[chat.UserID]chat.User
 	media    map[string]File
 	nextID   uint64
@@ -59,7 +59,7 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 		token:     token,
 		pingError: make(chan error, 1),
 		pollError: make(chan error, 1),
-		channels:  make(map[string]Channel),
+		channels:  make(map[string]*channel),
 		users:     make(map[chat.UserID]chat.User),
 		media:     make(map[string]File),
 	}
@@ -134,13 +134,13 @@ func (c *Client) SetLocalURL(u url.URL) {
 
 // Join returns a Channel for a Slack connection
 // Note: Slack users must add the bot to their channel.
-func (c *Client) join(ctx context.Context, channel string) (Channel, error) {
+func (c *Client) join(ctx context.Context, channel string) (*channel, error) {
 	c.Lock()
 	defer c.Unlock()
 
 	channels, err := c.channelsList(ctx)
 	if err != nil {
-		return Channel{}, err
+		return nil, err
 	}
 	for _, ch := range channels {
 		if ch.Name() == channel || ch.ID == channel {
@@ -148,7 +148,7 @@ func (c *Client) join(ctx context.Context, channel string) (Channel, error) {
 			return ch, nil
 		}
 	}
-	return Channel{}, errors.New("channel not found")
+	return nil, errors.New("channel not found")
 }
 
 func (c *Client) Join(ctx context.Context, channel string) (chat.Channel, error) {
@@ -259,17 +259,19 @@ func (c *Client) send(ctx context.Context, message map[string]interface{}) error
 }
 
 // channelsList returns a list of all slack channels.
-func (c *Client) channelsList(ctx context.Context) ([]Channel, error) {
+func (c *Client) channelsList(ctx context.Context) ([]*channel, error) {
 	var resp struct {
 		ResponseHeader
-		Channels []Channel `json:"channels"`
+		Channels []channel `json:"channels"`
 	}
 	if err := rpc(ctx, c, &resp, "channels.list"); err != nil {
 		return nil, err
 	}
-	channels := make([]Channel, 0)
+	channels := make([]*channel, 0)
 	for _, ch := range resp.Channels {
-		channels = append(channels, makeChannelFromChannel(c, ch))
+		ch := ch
+		initChannel(c, &ch)
+		channels = append(channels, &ch)
 	}
 	return channels, nil
 }

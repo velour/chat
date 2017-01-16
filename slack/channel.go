@@ -13,8 +13,8 @@ import (
 	"github.com/velour/chat"
 )
 
-// A Channel object describes a slack channel.
-type Channel struct {
+// A channel object describes a slack channel.
+type channel struct {
 	ID string `json:"id"`
 
 	// ChannelName is the name of the channel WITHOUT a leading #.
@@ -25,15 +25,17 @@ type Channel struct {
 	out    chan *Update
 }
 
-// makeChannel creates a new channel
-func makeChannel(c *Client, id, name string) Channel {
-	return makeChannelFromChannel(c, Channel{ID: id, ChannelName: name})
+// newChannel creates a new channel
+func newChannel(c *Client, id, name string) *channel {
+	ch := &channel{ID: id, ChannelName: name}
+	initChannel(c, ch)
+	return ch
 }
 
-// makeChannelFromChannel fills in an empty channel's privates
+// initChannel fills in an empty channel's privates
 //
 // Used when a marshaler has created a Channel
-func makeChannelFromChannel(c *Client, ch Channel) Channel {
+func initChannel(c *Client, ch *channel) {
 	ch.client = c
 	ch.in = make(chan []*Update, 1)
 	ch.out = make(chan *Update)
@@ -45,13 +47,12 @@ func makeChannelFromChannel(c *Client, ch Channel) Channel {
 		}
 		close(ch.out)
 	}()
-	return ch
 }
 
-func (ch Channel) Name() string        { return ch.ChannelName }
-func (ch Channel) ServiceName() string { return ch.client.domain + ".slack.com" }
+func (ch *channel) Name() string        { return ch.ChannelName }
+func (ch *channel) ServiceName() string { return ch.client.domain + ".slack.com" }
 
-func (ch Channel) Receive(ctx context.Context) (interface{}, error) {
+func (ch *channel) Receive(ctx context.Context) (interface{}, error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -73,7 +74,7 @@ func (ch Channel) Receive(ctx context.Context) (interface{}, error) {
 }
 
 // getUser returns a chat.User of a userID for a user in this Channel.
-func getUser(ctx context.Context, ch *Channel, id chat.UserID) (chat.User, error) {
+func getUser(ctx context.Context, ch *channel, id chat.UserID) (chat.User, error) {
 	ch.client.Lock()
 	defer ch.client.Unlock()
 
@@ -103,7 +104,7 @@ func getUser(ctx context.Context, ch *Channel, id chat.UserID) (chat.User, error
 // chatEvent returns the chat event corresponding to the update.
 // If the Update cannot be mapped, nil is returned with a nil error.
 // This signifies an Update that sholud be ignored.
-func (ch *Channel) chatEvent(ctx context.Context, u *Update) (interface{}, error) {
+func (ch *channel) chatEvent(ctx context.Context, u *Update) (interface{}, error) {
 	if u.User == "" {
 		// ignore updates without users.
 		return nil, nil
@@ -148,7 +149,7 @@ func (ch *Channel) chatEvent(ctx context.Context, u *Update) (interface{}, error
 }
 
 // Send sends text to the Channel and returns the sent Message.
-func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (chat.Message, error) {
+func (ch *channel) send(ctx context.Context, sendAs *chat.User, text string) (chat.Message, error) {
 	// Do not attempt to send empty messages
 	// TODO(cws): make bridge just not crash when errors come back from Send/SendAs)
 	if text == "" {
@@ -187,16 +188,16 @@ func (ch *Channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 	return msg, nil
 }
 
-func (ch Channel) Send(ctx context.Context, text string) (chat.Message, error) {
+func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) {
 	return ch.send(ctx, nil, text)
 }
 
-func (ch Channel) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
+func (ch *channel) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
 	log.Printf("Sending as: %+v %q\n", sendAs, text)
 	return ch.send(ctx, &sendAs, text)
 }
 
-func (ch Channel) Delete(ctx context.Context, id chat.MessageID) error {
+func (ch *channel) Delete(ctx context.Context, id chat.MessageID) error {
 	var resp ResponseHeader
 	return rpc(ctx, ch.client, &resp,
 		"chat.delete",
@@ -204,7 +205,7 @@ func (ch Channel) Delete(ctx context.Context, id chat.MessageID) error {
 		"channel="+ch.ID)
 }
 
-func (ch Channel) Edit(ctx context.Context, id chat.MessageID, newText string) (chat.MessageID, error) {
+func (ch *channel) Edit(ctx context.Context, id chat.MessageID, newText string) (chat.MessageID, error) {
 	var resp ResponseHeader
 	if err := rpc(ctx, ch.client, &resp,
 		"chat.update",
@@ -216,7 +217,7 @@ func (ch Channel) Edit(ctx context.Context, id chat.MessageID, newText string) (
 	return id, nil
 }
 
-func (ch Channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
+func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
 	msg, err := ch.Send(ctx, ">"+replyTo.Text)
 	if err != nil {
 		return msg, err
@@ -224,7 +225,7 @@ func (ch Channel) Reply(ctx context.Context, replyTo chat.Message, text string) 
 	return ch.Send(ctx, text)
 }
 
-func (ch Channel) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Message, text string) (chat.Message, error) {
+func (ch *channel) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Message, text string) (chat.Message, error) {
 	msg, err := ch.SendAs(ctx, sendAs, ">"+replyTo.Text)
 	if err != nil {
 		return msg, err
