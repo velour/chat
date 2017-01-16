@@ -87,7 +87,7 @@ func getUser(ctx context.Context, ch *channel, id chat.UserID) (chat.User, error
 		if err := rpc(ctx, ch.client, &resp, "users.info", "user="+string(id)); err != nil {
 			return chat.User{}, err
 		}
-		u := chat.User{
+		u = chat.User{
 			ID:          id,
 			Nick:        resp.User.Name,
 			FullName:    resp.User.Profile.RealName,
