@@ -139,11 +139,22 @@ loop:
 		fmt.Println("")
 		switch m := ev.(type) {
 		case chat.Message:
-			if m.Text == "LEAVE" {
+			switch m.Text {
+			case "LEAVE":
 				if _, err := b.Send(ctx, "Good bye"); err != nil {
 					panic(err)
 				}
 				break loop
+			case "WHO":
+				users, err := b.Who(ctx)
+				if err != nil {
+					log.Printf("Who failed: %s\n", err)
+					break loop
+				}
+				if _, err := b.Send(ctx, whoTxt(users)); err != nil {
+					log.Printf("Sending who failed: %s\n", err)
+					break loop
+				}
 			}
 		}
 	}
@@ -159,4 +170,17 @@ loop:
 		log.Printf("Bridge closed with error: %s", err)
 		group.Wait()
 	}
+}
+
+func whoTxt(users []chat.User) string {
+	var txt string
+	for _, u := range users {
+		if len(txt) > 0 {
+			txt += "\n"
+		}
+		txt += u.Name() +
+			" in " + u.Channel.Name() +
+			" on " + u.Channel.ServiceName()
+	}
+	return txt
 }
