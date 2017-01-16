@@ -211,7 +211,7 @@ func update(ctx context.Context, c *Client, u Update) {
 			u = &user{User: *from}
 			c.users[from.ID] = u
 		}
-		go updateUser(ctx, c, u, *from)
+		updateUser(ctx, c, u, *from)
 	}
 
 	var ch *channel
@@ -242,7 +242,7 @@ func getChatAdministrators(ctx context.Context, c *Client, chatID int64) ([]Chat
 			u = &user{User: cm.User}
 			c.users[cm.User.ID] = u
 		}
-		go updateUser(ctx, c, u, cm.User)
+		updateUser(ctx, c, u, cm.User)
 	}
 	return resp, nil
 }
