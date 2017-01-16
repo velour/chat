@@ -199,10 +199,11 @@ loop:
 				}
 				continue
 			}
-			ch.Lock()
+			ch.mu.Lock()
 			ch.users[msg.Origin] = true
-			ch.Unlock()
-			sendEvent(c, channelName, &msg, chat.Join{Who: chatUser(msg.Origin)})
+			ch.mu.Unlock()
+			join := chat.Join{Who: chatUser(ch, msg.Origin)}
+			sendEvent(ch, join)
 
 		case PART:
 			if len(msg.Arguments) < 1 {
@@ -221,10 +222,11 @@ loop:
 			if msg.Origin == myNick {
 				continue
 			}
-			ch.Lock()
+			ch.mu.Lock()
 			delete(ch.users, msg.Origin)
-			ch.Unlock()
-			sendEvent(c, channelName, &msg, chat.Leave{Who: chatUser(msg.Origin)})
+			ch.mu.Unlock()
+			leave := chat.Leave{Who: chatUser(ch, msg.Origin)}
+			sendEvent(ch, leave)
 
 		case NICK:
 			if len(msg.Arguments) < 1 {
@@ -232,37 +234,37 @@ loop:
 				continue
 			}
 			newNick := msg.Arguments[0]
-			rename := chat.Rename{
-				From: chatUser(msg.Origin),
-				To:   chatUser(newNick),
-			}
 
 			c.Lock()
 			if newNick == c.nick {
 				// The bot's nick was changed.
 				c.nick = msg.Origin
 			}
-			for channelName, ch := range c.channels {
-				ch.Lock()
+			for _, ch := range c.channels {
+				ch.mu.Lock()
 				if ch.users[msg.Origin] {
 					delete(ch.users, msg.Origin)
 					ch.users[newNick] = true
-					sendEventLocked(c, channelName, &msg, rename)
+					rename := chat.Rename{
+						From: chatUser(ch, msg.Origin),
+						To:   chatUser(ch, newNick),
+					}
+					sendEvent(ch, rename)
 				}
-				ch.Unlock()
+				ch.mu.Unlock()
 			}
 			c.Unlock()
 
 		case QUIT:
-			leave := chat.Leave{Who: chatUser(msg.Origin)}
 			c.Lock()
-			for channelName, ch := range c.channels {
-				ch.Lock()
+			for _, ch := range c.channels {
+				ch.mu.Lock()
 				if ch.users[msg.Origin] {
 					delete(ch.users, msg.Origin)
-					sendEventLocked(c, channelName, &msg, leave)
+					leave := chat.Leave{Who: chatUser(ch, msg.Origin)}
+					sendEvent(ch, leave)
 				}
-				ch.Unlock()
+				ch.mu.Unlock()
 			}
 			c.Unlock()
 
@@ -272,6 +274,14 @@ loop:
 				continue
 			}
 			text := msg.Arguments[1]
+			chName := msg.Arguments[0]
+			c.Lock()
+			ch, ok := c.channels[chName]
+			c.Unlock()
+			if !ok {
+				log.Printf("Unknown channel %s received PRIVMSG", chName)
+				continue
+			}
 			if strings.HasPrefix(text, actionPrefix) {
 				// IRC sends /me actions using CTCP ACTION.
 				// Convert it to raw text prefixed by "/me ".
@@ -281,10 +291,10 @@ loop:
 			}
 			message := chat.Message{
 				ID:   chat.MessageID(text),
-				From: chatUser(msg.Origin),
+				From: chatUser(ch, msg.Origin),
 				Text: text,
 			}
-			sendEvent(c, msg.Arguments[0], &msg, message)
+			sendEvent(ch, message)
 
 		case RPL_WHOREPLY:
 			if len(msg.Arguments) < 6 {
@@ -334,27 +344,12 @@ loop:
 	c.error <- err
 }
 
-func chatUser(nick string) chat.User {
-	return chat.User{ID: chat.UserID(nick), Nick: nick, DisplayName: nick}
-}
-
-func sendEvent(c *Client, channelName string, msg *Message, event interface{}) {
-	c.Lock()
-	defer c.Unlock()
-	sendEventLocked(c, channelName, msg, event)
-}
-
-// Just like sendEvent, but assumes that c.Lock is held.
-func sendEventLocked(c *Client, channelName string, msg *Message, event interface{}) {
-	ch, ok := c.channels[channelName]
-	if !ok {
-		log.Printf("Unknown channel %s received message %+v", channelName, msg)
-		return
-	}
-	select {
-	case ch.in <- []interface{}{event}:
-	case es := <-ch.in:
-		ch.in <- append(es, event)
+func chatUser(ch *channel, nick string) chat.User {
+	return chat.User{
+		ID:          chat.UserID(nick),
+		Nick:        nick,
+		DisplayName: nick,
+		Channel:     ch,
 	}
 }
 

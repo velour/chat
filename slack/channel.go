@@ -72,6 +72,34 @@ func (ch Channel) Receive(ctx context.Context) (interface{}, error) {
 	}
 }
 
+// getUser returns a chat.User of a userID for a user in this Channel.
+func getUser(ctx context.Context, ch *Channel, id chat.UserID) (chat.User, error) {
+	ch.client.Lock()
+	defer ch.client.Unlock()
+
+	u, ok := ch.client.users[id]
+	if !ok {
+		var resp struct {
+			ResponseHeader
+			User User `json:"user"`
+		}
+		if err := rpc(ctx, ch.client, &resp, "users.info", "user="+string(id)); err != nil {
+			return chat.User{}, err
+		}
+		u := chat.User{
+			ID:          id,
+			Nick:        resp.User.Name,
+			FullName:    resp.User.Profile.RealName,
+			DisplayName: resp.User.Name,
+			PhotoURL:    resp.User.Profile.Image,
+		}
+		ch.client.users[id] = u
+	}
+
+	u.Channel = ch
+	return u, nil
+}
+
 // chatEvent returns the chat event corresponding to the update.
 // If the Update cannot be mapped, nil is returned with a nil error.
 // This signifies an Update that sholud be ignored.
@@ -80,7 +108,7 @@ func (ch *Channel) chatEvent(ctx context.Context, u *Update) (interface{}, error
 		// ignore updates without users.
 		return nil, nil
 	}
-	user, err := ch.client.getUser(ctx, u.User)
+	user, err := getUser(ctx, ch, u.User)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +134,7 @@ func (ch *Channel) chatEvent(ctx context.Context, u *Update) (interface{}, error
 	case u.Type == "message":
 		id := chat.MessageID(u.Ts)
 		findUser := func(id string) (string, bool) {
-			u, err := ch.client.getUser(ctx, chat.UserID(id))
+			u, err := getUser(ctx, ch, chat.UserID(id))
 			if err != nil {
 				log.Printf("Failed to lookup mention user %s: %s\n", id, err)
 				return "", false

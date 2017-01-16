@@ -97,23 +97,23 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 		case msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil:
 			// If ReplyToMessage doesn't have a From, treat it as a regular Send,
 			// because chat.Message needs a From to fill ReplyTo.
-			replyTo := chatMessage(ch.client, msg.ReplyToMessage)
-			reply := chatMessage(ch.client, msg)
+			replyTo := chatMessage(ch, msg.ReplyToMessage)
+			reply := chatMessage(ch, msg)
 			return chat.Reply{ReplyTo: replyTo, Reply: reply}, nil
 
 		case msg.NewChatMember != nil:
-			who := chatUser(ch.client, msg.NewChatMember)
+			who := chatUser(ch, msg.NewChatMember)
 			return chat.Join{Who: who}, nil
 
 		case msg.LeftChatMember != nil:
-			who := chatUser(ch.client, msg.NewChatMember)
+			who := chatUser(ch, msg.NewChatMember)
 			return chat.Leave{Who: who}, nil
 
 		case msg.Document != nil:
 			if url, ok := mediaURL(ch.client, msg.Document.FileID); ok {
 				return chat.Message{
 					ID:   chatMessageID(msg),
-					From: chatUser(ch.client, msg.From),
+					From: chatUser(ch, msg.From),
 					Text: "/me shared a file: " + url,
 				}, nil
 			}
@@ -122,7 +122,7 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 			if url, ok := mediaURL(ch.client, largestPhoto(*msg.Photo)); ok {
 				return chat.Message{
 					ID:   chatMessageID(msg),
-					From: chatUser(ch.client, msg.From),
+					From: chatUser(ch, msg.From),
 					Text: "/me shared a photo: " + url,
 				}, nil
 			}
@@ -139,13 +139,13 @@ func chatEvent(ch *channel, u *Update) (interface{}, error) {
 				url = url + "?nonce=" + strconv.FormatInt(time.Now().UnixNano(), 16)
 				return chat.Message{
 					ID:   chatMessageID(msg),
-					From: chatUser(ch.client, msg.From),
+					From: chatUser(ch, msg.From),
 					Text: "/me sent a sticker: " + url,
 				}, nil
 			}
 
 		case msg.Text != nil:
-			return chatMessage(ch.client, msg), nil
+			return chatMessage(ch, msg), nil
 		}
 
 	case u.EditedMessage != nil:
@@ -181,7 +181,7 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, replyTo *chat.Me
 		return chat.Message{}, err
 	}
 
-	msg := chatMessage(ch.client, &resp)
+	msg := chatMessage(ch, &resp)
 	if sendAs != nil {
 		msg.From = *sendAs
 	}
@@ -234,28 +234,29 @@ func messageText(m *Message) string {
 }
 
 // chatMessage assumes that m.From != nil.
-func chatMessage(c *Client, m *Message) chat.Message {
+func chatMessage(ch *channel, m *Message) chat.Message {
 	return chat.Message{
 		ID:   chatMessageID(m),
-		From: chatUser(c, m.From),
+		From: chatUser(ch, m.From),
 		Text: messageText(m),
 	}
 }
 
 // chatUser assumes that u != nil.
-func chatUser(c *Client, user *User) chat.User {
+func chatUser(ch *channel, user *User) chat.User {
 	name := strings.TrimSpace(user.FirstName + " " + user.LastName)
 	nick := user.Username
 	if nick == "" {
 		nick = name
 	}
-	photoURL, _ := userPhotoURL(c, user.ID)
+	photoURL, _ := userPhotoURL(ch.client, user.ID)
 	return chat.User{
 		ID:          chat.UserID(strconv.FormatInt(user.ID, 10)),
 		Nick:        nick,
 		FullName:    name,
 		DisplayName: name,
 		PhotoURL:    photoURL,
+		Channel:     ch,
 	}
 }
 

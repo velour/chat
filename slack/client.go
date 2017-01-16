@@ -288,33 +288,6 @@ func (c *Client) postMessage(ctx context.Context, username, iconurl, channel, te
 		"text="+text)
 }
 
-func (c *Client) getUser(ctx context.Context, id chat.UserID) (chat.User, error) {
-	c.Lock()
-	defer c.Unlock()
-
-	if u, ok := c.users[id]; ok {
-		return u, nil
-	}
-
-	var resp struct {
-		ResponseHeader
-		User User `json:"user"`
-	}
-	if err := rpc(ctx, c, &resp, "users.info", "user="+string(id)); err != nil {
-		return chat.User{}, err
-	}
-
-	c.users[id] = chat.User{
-		ID:          id,
-		Nick:        resp.User.Name,
-		FullName:    resp.User.Profile.RealName,
-		DisplayName: resp.User.Name,
-		PhotoURL:    resp.User.Profile.Image,
-	}
-
-	return c.users[id], nil
-}
-
 // ServeHTTP serves files, photos, and other media from Slack.
 // It only handles GET requests, and
 // the final path element of the request must be a Slack File ID.

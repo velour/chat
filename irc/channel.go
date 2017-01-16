@@ -37,6 +37,7 @@ type channel struct {
 	// In simulates an infinite buffered channel
 	// of events from the Client to this channel.
 	// The Client publishes events without blocking.
+	// To maintain order, only one goroutine can publish to in at a time.
 	in chan []interface{}
 
 	// Out publishes events to the Receive method.
@@ -44,7 +45,7 @@ type channel struct {
 	// after all pending events have been Received.
 	out chan interface{}
 
-	sync.Mutex
+	mu sync.Mutex
 	// Users is the set of all users in this channel.
 	// To prevent races, the Client updates this map
 	// upon receiving a NICK, QUIT, or PART.
@@ -71,9 +72,9 @@ func newChannel(client *Client, name string) *channel {
 
 		for ns := range ch.inWho {
 			for _, n := range ns {
-				ch.Lock()
+				ch.mu.Lock()
 				ch.users[n] = true
-				ch.Unlock()
+				ch.mu.Unlock()
 			}
 		}
 		for es := range ch.in {
@@ -85,6 +86,16 @@ func newChannel(client *Client, name string) *channel {
 	}()
 
 	return ch
+}
+
+// sendEvent, sends an event to the channel.
+// The caller must already hold the channel's lock.
+func sendEvent(ch *channel, event interface{}) {
+	select {
+	case ch.in <- []interface{}{event}:
+	case es := <-ch.in:
+		ch.in <- append(es, event)
+	}
 }
 
 func (ch *channel) Name() string        { return ch.name }
@@ -149,7 +160,7 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, linePrefix, text
 	msg := chat.Message{ID: chat.MessageID(text), Text: text}
 	if sendAs == nil {
 		ch.client.Lock()
-		msg.From = chatUser(ch.client.nick)
+		msg.From = chatUser(ch, ch.client.nick)
 		ch.client.Unlock()
 	} else {
 		msg.From = *sendAs

@@ -156,6 +156,12 @@ type User struct {
 
 	// PhotoURL, if non-empty, is the URL to the User's profile photo.
 	PhotoURL string
+
+	// Channel is the relevant Channel to which the User belongs.
+	// Note that the User may belong to multiple Channels.
+	// This is the Channel relevant to the current context.
+	// For example, in an event, it's the Channel generating the event.
+	Channel Channel
 }
 
 // Name returns a name for the User that is suitable for display.
