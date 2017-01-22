@@ -117,9 +117,9 @@ func (ch *channel) Receive(ctx context.Context) (chat.Event, error) {
 	}
 }
 
-// splitPrivMsg returns text, split such that each split begins with prefix,
+// splitPRIVMSG returns text, split such that each split begins with prefix,
 // ends with suffix, contains no newlines, and is of no more than MaxBytes.
-func splitPrivMsg(origin, channelName, prefix, suffix, text string) []string {
+func splitPRIVMSG(origin, channelName, prefix, suffix, text string) []string {
 	header := Message{Origin: origin, Command: PRIVMSG, Arguments: []string{channelName, ""}}
 	maxTextSize := MaxBytes - (len(header.Bytes()) + len(prefix) + len(suffix))
 
@@ -156,10 +156,9 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, linePrefix, text
 	ch.originLock.Lock()
 	origin := ch.myOrigin
 	ch.originLock.Unlock()
-	for _, t := range splitPrivMsg(origin, ch.name, prefix+linePrefix, suffix, text) {
-		if err := send(ctx, ch.client, PRIVMSG, ch.name, t); err != nil {
-			return chat.Message{}, err
-		}
+	texts := splitPRIVMSG(origin, ch.name, prefix+linePrefix, suffix, text)
+	if err := sendPRIVMSGBatch(ctx, ch.client, ch.name, texts...); err != nil {
+		return chat.Message{}, err
 	}
 	msg := chat.Message{ID: chat.MessageID(text), Text: text}
 	if sendAs == nil {

@@ -9,7 +9,7 @@ type splitTest struct {
 	channel, prefix, text, suffix string
 }
 
-func TestSplitPrivMsg(t *testing.T) {
+func TestSplitPRIVMSG(t *testing.T) {
 	tests := []splitTest{
 		{
 			channel: "#velour",
@@ -49,7 +49,7 @@ func TestSplitPrivMsg(t *testing.T) {
 		)
 	}
 	for _, test := range tests {
-		splits := splitPrivMsg("", test.channel, test.prefix, test.suffix, test.text)
+		splits := splitPRIVMSG("", test.channel, test.prefix, test.suffix, test.text)
 		for i, s := range splits {
 			msg := Message{
 				Command:   PRIVMSG,

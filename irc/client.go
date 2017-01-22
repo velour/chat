@@ -9,6 +9,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/velour/chat"
 )
@@ -25,6 +26,7 @@ type Client struct {
 	server string
 	conn   net.Conn
 	in     *bufio.Reader
+	out    chan outMessage
 	error  chan error
 
 	sync.Mutex
@@ -61,11 +63,14 @@ func dial(ctx context.Context, conn net.Conn, server, nick, fullname, pass strin
 		server:   server,
 		conn:     conn,
 		in:       bufio.NewReader(conn),
+		out:      make(chan outMessage),
 		error:    make(chan error),
 		nick:     nick,
 		channels: make(map[string]*channel),
 	}
+	go limitSends(c)
 	if err := register(ctx, c, nick, fullname, pass); err != nil {
+		close(c.out)
 		return nil, err
 	}
 	go poll(c)
@@ -116,35 +121,81 @@ func (c *Client) Close(ctx context.Context) error {
 	for _, ch := range c.channels {
 		close(ch.in)
 	}
+	close(c.out)
 	if closeErr != nil {
 		return closeErr
 	}
 	return pollErr
 }
 
-func send(ctx context.Context, c *Client, cmd string, args ...string) error {
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := c.conn.SetWriteDeadline(deadline); err != nil {
-			return err
+type outMessage struct {
+	msgs [][]byte
+	err  chan<- error
+}
+
+// limitSends rate limits messages sent to the IRC server.
+// It implements the algorithm described in RFC 1459 Section 8.10.
+func limitSends(c *Client) {
+	var t time.Time
+	for send := range c.out {
+		var err error
+		for _, msg := range send.msgs {
+			now := time.Now()
+			if t.Before(now) {
+				t = now
+			}
+			if t.After(now.Add(10 * time.Second)) {
+				time.Sleep(t.Sub(now))
+			}
+			t = t.Add(2 * time.Second)
+			if _, err = c.conn.Write(msg); err != nil {
+				break
+			}
 		}
+		send.err <- err
 	}
+}
+
+// send sends a single message to the server.
+func send(ctx context.Context, c *Client, cmd string, args ...string) error {
 	msg := Message{Command: cmd, Arguments: args}
 	bs := msg.Bytes()
 	if len(bs) > MaxBytes {
 		return TooLongError{Message: bs[:MaxBytes], NTrunc: len(bs) - MaxBytes}
 	}
 	err := make(chan error, 1)
-	go func() {
-		_, e := c.conn.Write(bs)
-		err <- e
-	}()
+	go func() { c.out <- outMessage{msgs: [][]byte{bs}, err: err} }()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case err := <-err:
 		return err
 	}
+}
 
+// sendPRIVMSGBatch sends a batch of PRIVMSGs to the same channel,
+// together without any intervening send.
+// This is useful for sending a multi-line message split across multiple IRC messages.
+// Because the messages are published in a batch, they will all send,
+// even if this call is abandoned due to context cancellation.
+func sendPRIVMSGBatch(ctx context.Context, c *Client, channel string, texts ...string) error {
+	var msgs [][]byte
+	for _, txt := range texts {
+		msg := Message{Command: PRIVMSG, Arguments: []string{channel, txt}}
+		bs := msg.Bytes()
+		if len(bs) > MaxBytes {
+			return TooLongError{Message: bs[:MaxBytes], NTrunc: len(bs) - MaxBytes}
+		}
+		msgs = append(msgs, bs)
+	}
+	err := make(chan error, 1)
+	go func() { c.out <- outMessage{msgs: msgs, err: err} }()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-err:
+		return err
+	}
 }
 
 // next returns the next message from the server.
