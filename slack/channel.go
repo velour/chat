@@ -205,16 +205,20 @@ func (ch *channel) Delete(ctx context.Context, id chat.MessageID) error {
 		"channel="+ch.ID)
 }
 
-func (ch *channel) Edit(ctx context.Context, id chat.MessageID, newText string) (chat.MessageID, error) {
-	var resp ResponseHeader
+func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, error) {
+	var resp struct {
+		ResponseHeader
+		TS chat.MessageID `json:"ts"`
+	}
 	if err := rpc(ctx, ch.client, &resp,
 		"chat.update",
 		"channel="+ch.ID,
-		"ts="+string(id),
-		"text="+newText); err != nil {
-		return "", err
+		"ts="+string(msg.ID),
+		"text="+msg.Text); err != nil {
+		return chat.Message{}, err
 	}
-	return id, nil
+	msg.ID = resp.TS
+	return msg, nil
 }
 
 func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {

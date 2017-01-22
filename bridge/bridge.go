@@ -349,9 +349,9 @@ func (b *Bridge) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Mes
 // Delete is a no-op for Bridge.
 func (b *Bridge) Delete(context.Context, chat.MessageID) error { return nil }
 
-// Edit is a no-op for Bridge; it simply returns the given MessageID.
-func (b *Bridge) Edit(_ context.Context, id chat.MessageID, _ string) (chat.MessageID, error) {
-	return id, nil
+// Edit is a no-op for Bridge; it simply returns the given Message.
+func (b *Bridge) Edit(_ context.Context, msg chat.Message) (chat.Message, error) {
+	return msg, nil
 }
 
 func (b *Bridge) Who(ctx context.Context) ([]chat.User, error) {
@@ -431,13 +431,14 @@ func editMessage(ctx context.Context, channels []chat.Channel, findMessage findM
 			if msg == nil {
 				return nil
 			}
-			newID, err := ch.Edit(ctx, msg.ID, text)
+			m := *msg
+			m.Text = text
+			newMsg, err := ch.Edit(ctx, m)
 			if err != nil {
 				return fmt.Errorf("failed to send edit to %s on %s: %s",
 					ch.Name(), ch.ServiceName(), err)
 			}
-			messages[i] = message{to: ch, msg: *msg}
-			messages[i].msg.ID = newID
+			messages[i] = message{to: ch, msg: newMsg}
 			return nil
 		})
 	}

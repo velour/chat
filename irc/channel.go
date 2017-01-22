@@ -179,9 +179,9 @@ func (ch *channel) SendAs(ctx context.Context, sendAs chat.User, text string) (c
 // Delete is a no-op for IRC.
 func (ch *channel) Delete(context.Context, chat.MessageID) error { return nil }
 
-// Edit is a no-op for IRC, it simply returns the given MessageID.
-func (c *channel) Edit(_ context.Context, id chat.MessageID, _ string) (chat.MessageID, error) {
-	return id, nil
+// Edit is a no-op for IRC, it simply returns the given Message.
+func (c *channel) Edit(_ context.Context, msg chat.Message) (chat.Message, error) {
+	return msg, nil
 }
 
 func (ch *channel) reply(ctx context.Context, sendAs *chat.User, replyTo chat.Message, text string) (chat.Message, error) {

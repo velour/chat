@@ -214,18 +214,18 @@ func (ch *channel) SendAs(ctx context.Context, sendAs chat.User, text string) (c
 // Delete is a no-op for Telegram, as it's bot API doesn't support message deletion.
 func (ch *channel) Delete(context.Context, chat.MessageID) error { return nil }
 
-func (ch *channel) Edit(ctx context.Context, messageID chat.MessageID, text string) (chat.MessageID, error) {
+func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, error) {
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
-		"message_id": messageID,
-		"text":       html.EscapeString(text),
+		"message_id": msg.ID,
+		"text":       html.EscapeString(msg.Text),
 		"parse_mode": "HTML",
 	}
 	var resp Message
 	if err := rpc(ctx, ch.client, "editMessageText", req, &resp); err != nil {
-		return "", err
+		return chat.Message{}, err
 	}
-	return chatMessageID(&resp), nil
+	return chatMessage(ch, &resp), nil
 }
 
 func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {

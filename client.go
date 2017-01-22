@@ -53,11 +53,12 @@ type Channel interface {
 	// Implementations that do not support deleting messages may treat this as a no-op.
 	Delete(ctx context.Context, id MessageID) error
 
-	// Edit edits a sent message to have the given next text,
-	// and returns the unique ID representing the edited message.
+	// Edit changes the text of a Message previously sent on this Channel.
+	// The Text field of the given Message is used as the new Text.
 	//
-	// Implementations that do not support editing messages may treat this as a no-op.
-	Edit(ctx context.Context, id MessageID, newText string) (MessageID, error)
+	// Implementations that do not support editing messages
+	// may treat this as a no-op.
+	Edit(context.Context, Message) (Message, error)
 
 	// Reply replies to a message and returns the replied Message.
 	//
