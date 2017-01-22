@@ -197,11 +197,11 @@ func (ch *channel) SendAs(ctx context.Context, sendAs chat.User, text string) (c
 	return ch.send(ctx, &sendAs, text)
 }
 
-func (ch *channel) Delete(ctx context.Context, id chat.MessageID) error {
+func (ch *channel) Delete(ctx context.Context, msg chat.Message) error {
 	var resp ResponseHeader
 	return rpc(ctx, ch.client, &resp,
 		"chat.delete",
-		"ts="+string(id),
+		"ts="+string(msg.ID),
 		"channel="+ch.ID)
 }
 

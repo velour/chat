@@ -48,10 +48,11 @@ type Channel interface {
 	// Note that sendAs.ID may not be from the chat service undelying this Channel.
 	SendAs(ctx context.Context, sendAs User, text string) (Message, error)
 
-	// Delete deletes the a message.
+	// Delete deletes the a Message previously sent on this Channel.
 	//
-	// Implementations that do not support deleting messages may treat this as a no-op.
-	Delete(ctx context.Context, id MessageID) error
+	// Implementations that do not support deleting messages
+	// may treat this as a no-op.
+	Delete(context.Context, Message) error
 
 	// Edit changes the text of a Message previously sent on this Channel.
 	// The Text field of the given Message is used as the new Text.
