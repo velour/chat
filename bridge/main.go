@@ -122,7 +122,7 @@ func main() {
 	for _, ch := range channels {
 		log.Println("\t", ch.Name(), "on", ch.ServiceName())
 	}
-	if _, err := b.Send(ctx, "Hello, World!"); err != nil {
+	if _, err := chat.Say(ctx, b, "Hello, World!"); err != nil {
 		panic(err)
 	}
 
@@ -140,7 +140,7 @@ loop:
 		case chat.Message:
 			switch m.Text {
 			case "LEAVE":
-				if _, err := b.Send(ctx, "Good bye"); err != nil {
+				if _, err := chat.Say(ctx, b, "Good bye"); err != nil {
 					panic(err)
 				}
 				break loop
@@ -150,7 +150,7 @@ loop:
 					log.Printf("Who failed: %s\n", err)
 					break loop
 				}
-				if _, err := b.Send(ctx, whoTxt(users)); err != nil {
+				if _, err := chat.Say(ctx, b, whoTxt(users)); err != nil {
 					log.Printf("Sending who failed: %s\n", err)
 					break loop
 				}
@@ -162,7 +162,7 @@ loop:
 		for _, ch := range channels {
 			ch := ch
 			group.Go(func() error {
-				ch.Send(ctx, "Bridge closed with error: "+err.Error())
+				chat.Say(ctx, ch, "Bridge closed with error: "+err.Error())
 				return nil
 			})
 		}

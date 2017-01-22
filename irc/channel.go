@@ -168,12 +168,18 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, linePrefix, text
 	return msg, nil
 }
 
-func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) {
-	return ch.send(ctx, nil, "", text)
-}
-
-func (ch *channel) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
-	return ch.send(ctx, &sendAs, "", text)
+func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, error) {
+	if msg.ReplyTo != nil {
+		quote := "<" + msg.ReplyTo.From.Name() + "> "
+		if _, err := ch.send(ctx, msg.From, quote, msg.ReplyTo.Text); err != nil {
+			return chat.Message{}, nil
+		}
+	}
+	msg, err := ch.send(ctx, msg.From, "", msg.Text)
+	if err != nil {
+		return chat.Message{}, nil
+	}
+	return msg, nil
 }
 
 // Delete is a no-op for IRC.
@@ -182,26 +188,6 @@ func (ch *channel) Delete(context.Context, chat.Message) error { return nil }
 // Edit is a no-op for IRC, it simply returns the given Message.
 func (c *channel) Edit(_ context.Context, msg chat.Message) (chat.Message, error) {
 	return msg, nil
-}
-
-func (ch *channel) reply(ctx context.Context, sendAs *chat.User, replyTo chat.Message, text string) (chat.Message, error) {
-	quote := replyTo.From.Name() + "> "
-	if _, err := ch.send(ctx, sendAs, quote, replyTo.Text); err != nil {
-		return chat.Message{}, nil
-	}
-	msg, err := ch.send(ctx, sendAs, "", text)
-	if err != nil {
-		return chat.Message{}, nil
-	}
-	return msg, nil
-}
-
-func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
-	return ch.reply(ctx, nil, replyTo, text)
-}
-
-func (ch *channel) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Message, text string) (chat.Message, error) {
-	return ch.reply(ctx, &sendAs, replyTo, text)
 }
 
 func (ch *channel) Who(context.Context) ([]chat.User, error) {

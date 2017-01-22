@@ -94,13 +94,6 @@ func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 
 	case u.Message != nil:
 		switch msg := u.Message; {
-		case msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil:
-			// If ReplyToMessage doesn't have a From, treat it as a regular Send,
-			// because chat.Message needs a From to fill ReplyTo.
-			replyTo := chatMessage(ch, msg.ReplyToMessage)
-			reply := chatMessage(ch, msg)
-			return chat.Reply{ReplyTo: replyTo, Reply: reply}, nil
-
 		case msg.NewChatMember != nil:
 			who := chatUser(ch, *msg.NewChatMember)
 			return chat.Join{Who: *who}, nil
@@ -161,23 +154,23 @@ func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 			}
 
 		case msg.Text != nil:
-			return chatMessage(ch, msg), nil
+			return *chatMessage(ch, msg), nil
 		}
 
 	case u.EditedMessage != nil:
 		msg := u.EditedMessage
 		id := chatMessageID(msg)
-		return chat.Edit{OrigID: id, New: chatMessage(ch, msg)}, nil
+		return chat.Edit{OrigID: id, New: *chatMessage(ch, msg)}, nil
 	}
 	return nil, nil
 }
 
-func (ch *channel) send(ctx context.Context, sendAs *chat.User, replyTo *chat.Message, text string) (chat.Message, error) {
-	htmlText := html.EscapeString(text)
-	if sendAs != nil {
+func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, error) {
+	htmlText := html.EscapeString(msg.Text)
+	if msg.From != nil {
 		const mePrefix = "/me "
-		name := sendAs.Name()
-		if strings.HasPrefix(text, mePrefix) {
+		name := msg.From.Name()
+		if strings.HasPrefix(htmlText, mePrefix) {
 			htmlText = "<b>" + name + "</b> <em>" + strings.TrimPrefix(htmlText, mePrefix) + "</em>"
 		} else {
 			htmlText = "<b>" + name + ":</b> " + htmlText
@@ -188,27 +181,19 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, replyTo *chat.Me
 		"text":       htmlText,
 		"parse_mode": "HTML",
 	}
-	if replyTo != nil {
-		req["reply_to_message_id"] = replyTo.ID
+	if msg.ReplyTo != nil {
+		req["reply_to_message_id"] = msg.ReplyTo.ID
 	}
 	var resp Message
 	if err := rpc(ctx, ch.client, "sendMessage", req, &resp); err != nil {
 		return chat.Message{}, err
 	}
 
-	msg := chatMessage(ch, &resp)
-	if sendAs != nil {
-		msg.From = sendAs
+	m := chatMessage(ch, &resp)
+	if msg.From != nil {
+		m.From = msg.From
 	}
 	return msg, nil
-}
-
-func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) {
-	return ch.send(ctx, nil, nil, text)
-}
-
-func (ch *channel) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
-	return ch.send(ctx, &sendAs, nil, text)
 }
 
 // Delete is a no-op for Telegram, as it's bot API doesn't support message deletion.
@@ -225,15 +210,7 @@ func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, er
 	if err := rpc(ctx, ch.client, "editMessageText", req, &resp); err != nil {
 		return chat.Message{}, err
 	}
-	return chatMessage(ch, &resp), nil
-}
-
-func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
-	return ch.send(ctx, nil, &replyTo, text)
-}
-
-func (ch *channel) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Message, text string) (chat.Message, error) {
-	return ch.send(ctx, &sendAs, &replyTo, text)
+	return *chatMessage(ch, &resp), nil
 }
 
 func (ch *channel) Who(ctx context.Context) ([]chat.User, error) {
@@ -272,12 +249,16 @@ func messageText(m *Message) string {
 }
 
 // chatMessage assumes that m.From != nil.
-func chatMessage(ch *channel, m *Message) chat.Message {
-	return chat.Message{
+func chatMessage(ch *channel, m *Message) *chat.Message {
+	msg := &chat.Message{
 		ID:   chatMessageID(m),
 		From: chatUser(ch, *m.From),
 		Text: messageText(m),
 	}
+	if m.ReplyToMessage != nil && m.ReplyToMessage.From != nil {
+		msg.ReplyTo = chatMessage(ch, m.ReplyToMessage)
+	}
+	return msg
 }
 
 // chatUser returns a chat.User from a User.

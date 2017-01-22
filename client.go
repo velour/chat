@@ -37,16 +37,28 @@ type Channel interface {
 	// Who returns the Users connected to the Channel.
 	Who(ctx context.Context) ([]User, error)
 
-	// Send sends text to the Channel and returns the sent Message.
-	Send(ctx context.Context, text string) (Message, error)
-
-	// SendAs sends text to the Channel on behalf of a given user and returns the sent Message.
-	// The difference between SendAs and Send is that
-	// SendAs indicates a message sent on behalf of a user other that the current Client.
-	// An acceptable implementation may simply prefix text with the user's name or nick.
+	// Send sends Message to the Channel and returns the Message with its ID set.
 	//
-	// Note that sendAs.ID may not be from the chat service undelying this Channel.
-	SendAs(ctx context.Context, sendAs User, text string) (Message, error)
+	// The ID of the given Message is ignored.
+	// The ID of the returned Message is a unique identifier for the sent Message.
+	//
+	// If From is nil, the Message is sent from this Channel's User.
+	// If the From field is non-nil, the Message is sent on behalf of that User.
+	// What is sent should clearly indicate the From user.
+	// For example, an acceptable implementation
+	// can prefix the Message Text with the User's name.
+	//
+	// If ReplyTo is non-nil, the Message is a reply to the ReplyTo Message.
+	// If ReplyTo.ID is non-empty, it identifies a Message
+	// previously sent on this Channel.
+	// If ReplyTo.ID is empty, the exact ReplyTo Message is unknown.
+	// In both cases, ReplyTo.From is non-nil and ReplyTo.Text is non-empty.
+	//
+	// An implementation that does not support replies may ignore ReplyTo.
+	// However, as an enhancement, such an implementation
+	// could quote the text of the ReplyTo message
+	// before sending the reply.
+	Send(ctx context.Context, msg Message) (Message, error)
 
 	// Delete deletes the a Message previously sent on this Channel.
 	//
@@ -60,22 +72,11 @@ type Channel interface {
 	// Implementations that do not support editing messages
 	// may treat this as a no-op.
 	Edit(context.Context, Message) (Message, error)
+}
 
-	// Reply replies to a message and returns the replied Message.
-	//
-	// Implementations that do not support editing messages may treat this as a Send.
-	// As an enhancement, such an implementation could instead
-	// quote the user and text from the replyTo message,
-	// and send the reply text following the quote.
-	Reply(ctx context.Context, replyTo Message, text string) (Message, error)
-
-	// ReplyAs replies to a message on behalf of a given user and returns the replied Message.
-	// The difference between ReplyAs and Reply is that
-	// ReplyAs indicates a message sent on behalf of a user other that the current Client.
-	// An acceptable implementation may simply prefix text with the user's name or nick.
-	//
-	// Note that sendAs.ID may not be from the chat service undelying this Channel.
-	ReplyAs(ctx context.Context, sendAs User, replyTo Message, text string) (Message, error)
+// Say sends a Message to the Channel with the given text.
+func Say(ctx context.Context, ch Channel, text string) (Message, error) {
+	return ch.Send(ctx, Message{Text: text})
 }
 
 // An Event signifies something happening on a Channel.
@@ -94,7 +95,11 @@ type Message struct {
 	// ID is a unique string identifier representing the Message.
 	ID MessageID
 
-	// From the user who sent the Message.
+	// ReplyTo is a Message to which this Message is a reply.
+	// If ReplyTo is nil, the Message is not a reply.
+	ReplyTo *Message
+
+	// From is the User who sent the Message.
 	From *User
 
 	// Text is the text of the Message.
@@ -124,17 +129,6 @@ type Edit struct {
 }
 
 func (e Edit) Origin() Channel { return e.New.From.Channel }
-
-// A Reply is an event describing a user replying to a message.
-type Reply struct {
-	// ReplyTo is the message that was replied to.
-	ReplyTo Message
-
-	// Reply is the message of the reply.
-	Reply Message
-}
-
-func (e Reply) Origin() Channel { return e.Reply.From.Channel }
 
 // A Join is an event describing a user joining a channel.
 type Join struct {

@@ -204,25 +204,12 @@ func relay(ctx context.Context, b *Bridge, event chat.Event) error {
 	origName := origin.Name() + " on " + origin.ServiceName()
 	switch ev := event.(type) {
 	case chat.Message:
-		var err error
-		to := allChannelsExcept(b, origin)
-		msgs, err := sendMessage(ctx, to, ev.From, nil, ev.Text)
+		msgs, err := sendMessage(ctx, b, allChannelsExcept(b, origin), &ev)
 		if err != nil {
 			return err
 		}
 		msgs = append(msgs, message{to: origin, msg: ev})
 		logMessage(b, &logEntry{origin: origin, copies: msgs})
-		return nil
-
-	case chat.Reply:
-		findMessage := makeFindMessage(b, origin, ev.ReplyTo.ID)
-		to := allChannelsExcept(b, origin)
-		msgs, err := sendMessage(ctx, to, ev.Reply.From, findMessage, ev.Reply.Text)
-		if err != nil {
-			return err
-		}
-		msgs = append(msgs, message{to: origin, msg: ev.Reply})
-		logMessage(b, &logEntry{origin: b, copies: msgs})
 		return nil
 
 	case chat.Delete:
@@ -244,15 +231,13 @@ func relay(ctx context.Context, b *Bridge, event chat.Event) error {
 		return nil
 
 	case chat.Join:
-		msg := ev.Who.Name() + " joined " + origName
-		to := allChannelsExcept(b, origin)
-		_, err := sendMessage(ctx, to, nil, nil, msg)
+		msg := chat.Message{Text: ev.Who.Name() + " joined " + origName}
+		_, err := sendMessage(ctx, b, allChannelsExcept(b, origin), &msg)
 		return err
 
 	case chat.Leave:
-		msg := ev.Who.Name() + " left " + origName
-		to := allChannelsExcept(b, origin)
-		_, err := sendMessage(ctx, to, nil, nil, msg)
+		msg := chat.Message{Text: ev.Who.Name() + " left " + origName}
+		_, err := sendMessage(ctx, b, allChannelsExcept(b, origin), &msg)
 		return err
 
 	case chat.Rename:
@@ -261,9 +246,8 @@ func relay(ctx context.Context, b *Bridge, event chat.Event) error {
 		if old == new {
 			break
 		}
-		msg := old + " renamed to " + new + " in " + origName
-		to := allChannelsExcept(b, origin)
-		_, err := sendMessage(ctx, to, nil, nil, msg)
+		msg := chat.Message{Text: old + " renamed to " + new + " in " + origName}
+		_, err := sendMessage(ctx, b, allChannelsExcept(b, origin), &msg)
 		return err
 	}
 	return nil
@@ -300,47 +284,12 @@ func nextID(b *Bridge) chat.MessageID {
 	return chat.MessageID(strconv.Itoa(b.nextID - 1))
 }
 
-func (b *Bridge) Send(ctx context.Context, text string) (chat.Message, error) {
-	msgs, err := sendMessage(ctx, b.channels, nil, nil, text)
+func (b *Bridge) Send(ctx context.Context, msg chat.Message) (chat.Message, error) {
+	msgs, err := sendMessage(ctx, b, b.channels, &msg)
 	if err != nil {
 		return chat.Message{}, err
 	}
-	msg := chat.Message{ID: nextID(b), From: me(b), Text: text}
-	msgs = append(msgs, message{to: b, msg: msg})
-	logMessage(b, &logEntry{origin: b, copies: msgs})
-	return msg, nil
-}
-
-func (b *Bridge) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
-	msgs, err := sendMessage(ctx, b.channels, &sendAs, nil, text)
-	if err != nil {
-		return chat.Message{}, err
-	}
-	msg := chat.Message{ID: nextID(b), From: me(b), Text: text}
-	msgs = append(msgs, message{to: b, msg: msg})
-	logMessage(b, &logEntry{origin: b, copies: msgs})
-	return msg, nil
-}
-
-func (b *Bridge) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
-	findMessage := makeFindMessage(b, b, replyTo.ID)
-	msgs, err := sendMessage(ctx, b.channels, nil, findMessage, text)
-	if err != nil {
-		return chat.Message{}, err
-	}
-	msg := chat.Message{ID: nextID(b), From: me(b), Text: text}
-	msgs = append(msgs, message{to: b, msg: msg})
-	logMessage(b, &logEntry{origin: b, copies: msgs})
-	return msg, nil
-}
-
-func (b *Bridge) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Message, text string) (chat.Message, error) {
-	findMessage := makeFindMessage(b, b, replyTo.ID)
-	msgs, err := sendMessage(ctx, b.channels, &sendAs, findMessage, text)
-	if err != nil {
-		return chat.Message{}, err
-	}
-	msg := chat.Message{ID: nextID(b), From: me(b), Text: text}
+	msg.ID = nextID(b)
 	msgs = append(msgs, message{to: b, msg: msg})
 	logMessage(b, &logEntry{origin: b, copies: msgs})
 	return msg, nil
@@ -381,33 +330,21 @@ func (b *Bridge) Who(ctx context.Context) ([]chat.User, error) {
 
 // sendMessage sends a message to multiple channels,
 // returning a slice of the messages.
-func sendMessage(ctx context.Context,
-	channels []chat.Channel,
-	sendAs *chat.User,
-	findMessage findMessageFunc,
-	text string) ([]message, error) {
-
-	if findMessage == nil {
-		findMessage = func(chat.Channel) *chat.Message { return nil }
+func sendMessage(ctx context.Context, b *Bridge, channels []chat.Channel, msg *chat.Message) ([]message, error) {
+	findMessage := func(chat.Channel) *chat.Message { return nil }
+	if msg.ReplyTo != nil {
+		findMessage = makeFindMessage(b, msg.Origin(), msg.ReplyTo.ID)
 	}
+
 	var group errgroup.Group
 	messages := make([]message, len(channels))
 	for i, ch := range channels {
 		i, ch := i, ch
 		group.Go(func() error {
 			var err error
-			var m chat.Message
-			switch replyTo := findMessage(ch); {
-			case replyTo != nil && sendAs == nil:
-				m, err = ch.Reply(ctx, *replyTo, text)
-			case replyTo != nil && sendAs != nil:
-				m, err = ch.ReplyAs(ctx, *sendAs, *replyTo, text)
-			case sendAs == nil:
-				m, err = ch.Send(ctx, text)
-			case sendAs != nil:
-				m, err = ch.SendAs(ctx, *sendAs, text)
-			}
-			if err != nil {
+			m := *msg
+			m.ReplyTo = findMessage(ch)
+			if m, err = ch.Send(ctx, m); err != nil {
 				return fmt.Errorf("failed to send message to %s on %s: %s\n",
 					ch.Name(), ch.ServiceName(), err)
 			}

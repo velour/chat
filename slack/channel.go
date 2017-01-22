@@ -188,13 +188,14 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 	return msg, nil
 }
 
-func (ch *channel) Send(ctx context.Context, text string) (chat.Message, error) {
-	return ch.send(ctx, nil, text)
-}
-
-func (ch *channel) SendAs(ctx context.Context, sendAs chat.User, text string) (chat.Message, error) {
-	log.Printf("Sending as: %+v %q\n", sendAs, text)
-	return ch.send(ctx, &sendAs, text)
+func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, error) {
+	if msg.ReplyTo != nil {
+		txt := "*" + msg.ReplyTo.From.Name() + "* said:\n>" + msg.ReplyTo.Text
+		if _, err := ch.send(ctx, msg.From, txt); err != nil {
+			return chat.Message{}, err
+		}
+	}
+	return ch.send(ctx, msg.From, msg.Text)
 }
 
 func (ch *channel) Delete(ctx context.Context, msg chat.Message) error {
@@ -219,22 +220,6 @@ func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, er
 	}
 	msg.ID = resp.TS
 	return msg, nil
-}
-
-func (ch *channel) Reply(ctx context.Context, replyTo chat.Message, text string) (chat.Message, error) {
-	msg, err := ch.Send(ctx, ">"+replyTo.Text)
-	if err != nil {
-		return msg, err
-	}
-	return ch.Send(ctx, text)
-}
-
-func (ch *channel) ReplyAs(ctx context.Context, sendAs chat.User, replyTo chat.Message, text string) (chat.Message, error) {
-	msg, err := ch.SendAs(ctx, sendAs, ">"+replyTo.Text)
-	if err != nil {
-		return msg, err
-	}
-	return ch.SendAs(ctx, sendAs, text)
 }
 
 func (ch *channel) Who(ctx context.Context) ([]chat.User, error) {
