@@ -384,7 +384,7 @@ func (b *Bridge) Who(ctx context.Context) ([]chat.User, error) {
 func sendMessage(ctx context.Context,
 	channels []chat.Channel,
 	sendAs *chat.User,
-	findMessage func(chat.Channel) *chat.Message,
+	findMessage findMessageFunc,
 	text string) ([]message, error) {
 
 	if findMessage == nil {
