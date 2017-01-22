@@ -74,7 +74,7 @@ func (ch *channel) Receive(ctx context.Context) (chat.Event, error) {
 }
 
 // getUser returns a chat.User of a userID for a user in this Channel.
-func getUser(ctx context.Context, ch *channel, id chat.UserID) (chat.User, error) {
+func getUser(ctx context.Context, ch *channel, id chat.UserID) (*chat.User, error) {
 	ch.client.Lock()
 	defer ch.client.Unlock()
 
@@ -85,7 +85,7 @@ func getUser(ctx context.Context, ch *channel, id chat.UserID) (chat.User, error
 			User User `json:"user"`
 		}
 		if err := rpc(ctx, ch.client, &resp, "users.info", "user="+string(id)); err != nil {
-			return chat.User{}, err
+			return nil, err
 		}
 		u = chat.User{
 			ID:          id,
@@ -98,7 +98,7 @@ func getUser(ctx context.Context, ch *channel, id chat.UserID) (chat.User, error
 	}
 
 	u.Channel = ch
-	return u, nil
+	return &u, nil
 }
 
 // chatEvent returns the chat event corresponding to the update.
@@ -184,7 +184,7 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 	}
 
 	id := chat.MessageID(resp.TS)
-	msg := chat.Message{ID: id, From: *sendAs, Text: text}
+	msg := chat.Message{ID: id, From: sendAs, Text: text}
 	return msg, nil
 }
 
@@ -254,7 +254,7 @@ func (ch *channel) Who(ctx context.Context) ([]chat.User, error) {
 			log.Printf("Failed to lookup Who user %s: %s\n", id, err)
 			continue
 		}
-		users = append(users, u)
+		users = append(users, *u)
 	}
 	return users, nil
 }

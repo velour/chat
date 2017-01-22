@@ -202,7 +202,7 @@ loop:
 			ch.mu.Lock()
 			ch.users[msg.Origin] = true
 			ch.mu.Unlock()
-			join := chat.Join{Who: chatUser(ch, msg.Origin)}
+			join := chat.Join{Who: *chatUser(ch, msg.Origin)}
 			sendEvent(ch, join)
 
 		case PART:
@@ -225,7 +225,7 @@ loop:
 			ch.mu.Lock()
 			delete(ch.users, msg.Origin)
 			ch.mu.Unlock()
-			leave := chat.Leave{Who: chatUser(ch, msg.Origin)}
+			leave := chat.Leave{Who: *chatUser(ch, msg.Origin)}
 			sendEvent(ch, leave)
 
 		case NICK:
@@ -246,8 +246,8 @@ loop:
 					delete(ch.users, msg.Origin)
 					ch.users[newNick] = true
 					rename := chat.Rename{
-						From: chatUser(ch, msg.Origin),
-						To:   chatUser(ch, newNick),
+						From: *chatUser(ch, msg.Origin),
+						To:   *chatUser(ch, newNick),
 					}
 					sendEvent(ch, rename)
 				}
@@ -261,7 +261,7 @@ loop:
 				ch.mu.Lock()
 				if ch.users[msg.Origin] {
 					delete(ch.users, msg.Origin)
-					leave := chat.Leave{Who: chatUser(ch, msg.Origin)}
+					leave := chat.Leave{Who: *chatUser(ch, msg.Origin)}
 					sendEvent(ch, leave)
 				}
 				ch.mu.Unlock()
@@ -344,8 +344,8 @@ loop:
 	c.error <- err
 }
 
-func chatUser(ch *channel, nick string) chat.User {
-	return chat.User{
+func chatUser(ch *channel, nick string) *chat.User {
+	return &chat.User{
 		ID:          chat.UserID(nick),
 		Nick:        nick,
 		DisplayName: nick,

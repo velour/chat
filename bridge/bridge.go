@@ -206,7 +206,7 @@ func relay(ctx context.Context, b *Bridge, event chat.Event) error {
 	case chat.Message:
 		var err error
 		to := allChannelsExcept(b, origin)
-		msgs, err := sendMessage(ctx, to, &ev.From, nil, ev.Text)
+		msgs, err := sendMessage(ctx, to, ev.From, nil, ev.Text)
 		if err != nil {
 			return err
 		}
@@ -217,7 +217,7 @@ func relay(ctx context.Context, b *Bridge, event chat.Event) error {
 	case chat.Reply:
 		findMessage := makeFindMessage(b, origin, ev.ReplyTo.ID)
 		to := allChannelsExcept(b, origin)
-		msgs, err := sendMessage(ctx, to, &ev.Reply.From, findMessage, ev.Reply.Text)
+		msgs, err := sendMessage(ctx, to, ev.Reply.From, findMessage, ev.Reply.Text)
 		if err != nil {
 			return err
 		}
@@ -282,10 +282,10 @@ func (b *Bridge) Receive(ctx context.Context) (chat.Event, error) {
 	}
 }
 
-func me(b *Bridge) chat.User {
+func me(b *Bridge) *chat.User {
 	// TODO: use a more informative bridge User.
 	// Option: get the User info from channels[0].
-	return chat.User{
+	return &chat.User{
 		ID:          chat.UserID("bridge"),
 		Nick:        "bridge",
 		FullName:    "bridge",

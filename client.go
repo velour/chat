@@ -95,7 +95,7 @@ type Message struct {
 	ID MessageID
 
 	// From the user who sent the Message.
-	From User
+	From *User
 
 	// Text is the text of the Message.
 	Text string

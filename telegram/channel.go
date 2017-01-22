@@ -103,11 +103,11 @@ func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 
 		case msg.NewChatMember != nil:
 			who := chatUser(ch, *msg.NewChatMember)
-			return chat.Join{Who: who}, nil
+			return chat.Join{Who: *who}, nil
 
 		case msg.LeftChatMember != nil:
 			who := chatUser(ch, *msg.NewChatMember)
-			return chat.Leave{Who: who}, nil
+			return chat.Leave{Who: *who}, nil
 
 		case msg.Document != nil:
 			if url := mediaURL(ch.client, msg.Document.FileID); url != "" {
@@ -198,7 +198,7 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, replyTo *chat.Me
 
 	msg := chatMessage(ch, &resp)
 	if sendAs != nil {
-		msg.From = *sendAs
+		msg.From = sendAs
 	}
 	return msg, nil
 }
@@ -254,7 +254,7 @@ func (ch *channel) Who(ctx context.Context) ([]chat.User, error) {
 		u.Lock()
 		user := u.User
 		u.Unlock()
-		users = append(users, chatUser(ch, user))
+		users = append(users, *chatUser(ch, user))
 	}
 	return users, nil
 }
@@ -280,29 +280,16 @@ func chatMessage(ch *channel, m *Message) chat.Message {
 	}
 }
 
-func chatUserByID(ch *channel, userID int64) (chat.User, bool) {
-	ch.client.Lock()
-	u, ok := ch.client.users[userID]
-	ch.client.Unlock()
-	if !ok {
-		return chat.User{}, false
-	}
-	u.Lock()
-	user := u.User
-	u.Unlock()
-	return chatUser(ch, user), true
-}
-
 // chatUser returns a chat.User from a User.
 // Must not be called with the ch.client Lock held.
-func chatUser(ch *channel, user User) chat.User {
+func chatUser(ch *channel, user User) *chat.User {
 	name := strings.TrimSpace(user.FirstName + " " + user.LastName)
 	nick := user.Username
 	if nick == "" {
 		nick = name
 	}
 	photoURL, _ := userPhotoURL(ch.client, user.ID)
-	return chat.User{
+	return &chat.User{
 		ID:          chat.UserID(strconv.FormatInt(user.ID, 10)),
 		Nick:        nick,
 		FullName:    name,

@@ -163,7 +163,7 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, linePrefix, text
 		msg.From = chatUser(ch, ch.client.nick)
 		ch.client.Unlock()
 	} else {
-		msg.From = *sendAs
+		msg.From = sendAs
 	}
 	return msg, nil
 }
@@ -209,7 +209,7 @@ func (ch *channel) Who(context.Context) ([]chat.User, error) {
 	defer ch.mu.Unlock()
 	var us []chat.User
 	for nick, _ := range ch.users {
-		us = append(us, chatUser(ch, nick))
+		us = append(us, *chatUser(ch, nick))
 	}
 	return us, nil
 }
