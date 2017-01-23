@@ -19,6 +19,7 @@ import (
 	"io"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/golang/sync/errgroup"
 	"github.com/velour/chat"
@@ -337,6 +338,13 @@ func sendMessage(ctx context.Context, b *Bridge, channels []chat.Channel, msg *c
 		findReply = makeFindMessage(b, msg.Origin(), msg.ReplyTo.ID)
 	}
 
+	// Limit the time we wait for the sends.
+	// For example, IRC can block almost indefinitely due to rate-limiting.
+	// We don't want to hang the bridge, instead, wait for a short time,
+	// and give up on any error returns from whatever didn't finish.
+	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second))
+	defer cancel()
+
 	var group errgroup.Group
 	messages := make([]message, len(channels))
 	for i, ch := range channels {
@@ -345,7 +353,8 @@ func sendMessage(ctx context.Context, b *Bridge, channels []chat.Channel, msg *c
 			var err error
 			m := *msg
 			m.ReplyTo = findReply(ch)
-			if m, err = ch.Send(ctx, m); err != nil {
+			m, err = ch.Send(ctx, m)
+			if err != nil && err != context.DeadlineExceeded {
 				return fmt.Errorf("failed to send message to %s on %s: %s\n",
 					ch.Name(), ch.ServiceName(), err)
 			}
