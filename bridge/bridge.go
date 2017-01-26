@@ -219,14 +219,20 @@ func relay(ctx context.Context, b *Bridge, event chat.Event) error {
 
 	case chat.Edit:
 		findMessage := makeFindMessage(b, origin, ev.OrigID)
+		origMsg := findMessage(origin)
+		if origMsg == nil {
+			// If we didn't find the original message,
+			// it's gone off the end of history.
+			// This is a no-op.
+			return nil
+		}
 		to := allChannelsExcept(b, origin)
 		msgs, err := editMessage(ctx, to, findMessage, ev.New.Text)
 		if err != nil {
 			return err
 		}
-		origMsg := *findMessage(origin)
 		origMsg.ID = ev.New.ID
-		msgs = append(msgs, message{to: origin, msg: origMsg})
+		msgs = append(msgs, message{to: origin, msg: *origMsg})
 		logMessage(b, &logEntry{origin: b, copies: msgs})
 		return nil
 
