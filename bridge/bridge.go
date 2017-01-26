@@ -194,7 +194,7 @@ func logMessage(b *Bridge, entry *logEntry) {
 	b.Lock()
 	b.log = append(b.log, entry)
 	if len(b.log) > maxHistory {
-		b.log = b.log[:maxHistory]
+		b.log = b.log[1:]
 	}
 	b.Unlock()
 }
