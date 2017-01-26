@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"html"
 	"net/url"
 	"strings"
 	"unicode"
@@ -14,6 +15,8 @@ import (
 //
 // It does the following formatting:
 //
+// First the text is HTML escaped.
+//
 // If the text begins with "/me" followed by non-newline-whitespace:
 // • this prefix is stripped,
 // • leading and trailing non-newline-whitespace is stripped,
@@ -22,7 +25,7 @@ import (
 //
 // If msg.From is non-nil, the text is prefixed by "<b>"+msg.From.Name()+":</b> ".
 func formatText(msg chat.Message) string {
-	text := msg.Text
+	text := html.EscapeString(msg.Text)
 	if strings.HasPrefix(text, "/me") {
 		rest := strings.TrimPrefix(text, "/me")
 		if r, _ := utf8.DecodeRuneInString(rest); rest == "" || isNonNewlineSpace(r) {

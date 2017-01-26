@@ -13,6 +13,7 @@ func TestFormatText(t *testing.T) {
 		{text: "", want: ""},
 		{text: "  \t\t", want: ""},
 		{text: "hello", want: "hello"},
+		{text: "<p>html</p>", want: "&lt;p&gt;html&lt;/p&gt;"},
 		{text: "☺", want: "☺"},
 		{text: "αβξ", want: "αβξ"},
 		{name: "ĉapelita", text: "", want: "<b>ĉapelita:</b> "},
@@ -29,6 +30,7 @@ func TestFormatText(t *testing.T) {
 		{text: "/me\tsays hi", want: "<em>says hi</em>"},
 		{text: "/me\tαβξ", want: "<em>αβξ</em>"},
 		{text: "/me\tαβξ\t\t", want: "<em>αβξ</em>"},
+		{text: "/me <p>escapes HTML</p>", want: "<em>&lt;p&gt;escapes HTML&lt;/p&gt;</em>"},
 
 		{text: "/me http://www.a.com", want: "http://www.a.com"},
 		{text: "/me https://www.a.com", want: "https://www.a.com"},
@@ -45,8 +47,8 @@ func TestFormatText(t *testing.T) {
 			want: "<em>links </em>https://www.a.com<em> and </em>https://www.b.com",
 		},
 		{
-			text: "/me doesn't link httpnotalink",
-			want: "<em>doesn't link httpnotalink</em>",
+			text: "/me does not link httpnotalink",
+			want: "<em>does not link httpnotalink</em>",
 		},
 		{
 			text: "/me links https://www.a.com but not httpnotalink",
