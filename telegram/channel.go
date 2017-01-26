@@ -166,19 +166,9 @@ func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 }
 
 func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, error) {
-	htmlText := html.EscapeString(msg.Text)
-	if msg.From != nil {
-		const mePrefix = "/me "
-		name := msg.From.Name()
-		if strings.HasPrefix(htmlText, mePrefix) {
-			htmlText = "<b>" + name + "</b> <em>" + strings.TrimPrefix(htmlText, mePrefix) + "</em>"
-		} else {
-			htmlText = "<b>" + name + ":</b> " + htmlText
-		}
-	}
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
-		"text":       htmlText,
+		"text":       formatText(msg),
 		"parse_mode": "HTML",
 	}
 	if msg.ReplyTo != nil {
