@@ -50,6 +50,10 @@ func newChannel(client *Client, chat Chat) *channel {
 	return ch
 }
 
+func (ch *channel) PrettyPrint() string {
+	return "\"" + ch.Name() + " at " + ch.ServiceName() + "\""
+}
+
 func (ch *channel) Name() string {
 	if ch.chat.Title != nil {
 		return *ch.chat.Title

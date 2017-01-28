@@ -49,6 +49,10 @@ func initChannel(c *Client, ch *channel) {
 	}()
 }
 
+func (ch *channel) PrettyPrint() string {
+	return "\"" + ch.Name() + " at " + ch.ServiceName() + "\""
+}
+
 func (ch *channel) Name() string        { return ch.ChannelName }
 func (ch *channel) ServiceName() string { return ch.client.domain + ".slack.com" }
 

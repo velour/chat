@@ -98,6 +98,10 @@ func sendEvent(ch *channel, event chat.Event) {
 	}
 }
 
+func (ch *channel) PrettyPrint() string {
+	return "\"" + ch.Name() + " at " + ch.ServiceName() + "\""
+}
+
 func (ch *channel) Name() string        { return ch.name }
 func (ch *channel) ServiceName() string { return "IRC (" + ch.client.server + ")" }
 
