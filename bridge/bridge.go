@@ -71,17 +71,12 @@ type Bridge struct {
 	// log is a history of messages sent with or relayed by the bridge.
 	// The lock must be held to access log.
 	// However, it's entries are never modified; they can be read without the lock.
-	log []*logEntry
-}
-
-type logEntry struct {
-	origin chat.Channel
-	copies []message
+	log [][]message
 }
 
 type message struct {
-	to  chat.Channel
-	msg chat.Message
+	To  chat.Channel
+	Msg chat.Message
 }
 
 // New returns a new bridge that bridges a set of channels.
@@ -190,7 +185,7 @@ func poll(ctx context.Context, b *Bridge, ch chat.Channel) {
 	}
 }
 
-func logMessage(b *Bridge, entry *logEntry) {
+func logMessage(b *Bridge, entry []message) {
 	b.Lock()
 	b.log = append(b.log, entry)
 	if len(b.log) > maxHistory {
@@ -208,8 +203,8 @@ func relay(ctx context.Context, b *Bridge, event chat.Event) error {
 		if err != nil {
 			return err
 		}
-		msgs = append(msgs, message{to: origin, msg: ev})
-		logMessage(b, &logEntry{origin: origin, copies: msgs})
+		msgs = append(msgs, message{To: origin, Msg: ev})
+		logMessage(b, msgs)
 		return nil
 
 	case chat.Delete:
@@ -232,8 +227,8 @@ func relay(ctx context.Context, b *Bridge, event chat.Event) error {
 			return err
 		}
 		origMsg.ID = ev.New.ID
-		msgs = append(msgs, message{to: origin, msg: *origMsg})
-		logMessage(b, &logEntry{origin: b, copies: msgs})
+		msgs = append(msgs, message{To: origin, Msg: *origMsg})
+		logMessage(b, msgs)
 		return nil
 
 	case chat.Join:
@@ -296,8 +291,8 @@ func (b *Bridge) Send(ctx context.Context, msg chat.Message) (chat.Message, erro
 		return chat.Message{}, err
 	}
 	msg.ID = nextID(b)
-	msgs = append(msgs, message{to: b, msg: msg})
-	logMessage(b, &logEntry{origin: b, copies: msgs})
+	msgs = append(msgs, message{To: b, Msg: msg})
+	logMessage(b, msgs)
 	return msg, nil
 }
 
@@ -337,9 +332,9 @@ func (b *Bridge) Who(ctx context.Context) ([]chat.User, error) {
 // sendMessage sends a message to multiple channels,
 // returning a slice of the messages.
 func sendMessage(ctx context.Context, b *Bridge, channels []chat.Channel, msg *chat.Message) ([]message, error) {
-	findMessage := func(chat.Channel) *chat.Message { return nil }
+	findReply := func(chat.Channel) *chat.Message { return nil }
 	if msg.ReplyTo != nil {
-		findMessage = makeFindMessage(b, msg.Origin(), msg.ReplyTo.ID)
+		findReply = makeFindMessage(b, msg.Origin(), msg.ReplyTo.ID)
 	}
 
 	var group errgroup.Group
@@ -349,12 +344,12 @@ func sendMessage(ctx context.Context, b *Bridge, channels []chat.Channel, msg *c
 		group.Go(func() error {
 			var err error
 			m := *msg
-			m.ReplyTo = findMessage(ch)
+			m.ReplyTo = findReply(ch)
 			if m, err = ch.Send(ctx, m); err != nil {
 				return fmt.Errorf("failed to send message to %s on %s: %s\n",
 					ch.Name(), ch.ServiceName(), err)
 			}
-			messages[i] = message{to: ch, msg: m}
+			messages[i] = message{To: ch, Msg: m}
 			return nil
 		})
 	}
@@ -381,7 +376,7 @@ func editMessage(ctx context.Context, channels []chat.Channel, findMessage findM
 				return fmt.Errorf("failed to send edit to %s on %s: %s",
 					ch.Name(), ch.ServiceName(), err)
 			}
-			messages[i] = message{to: ch, msg: newMsg}
+			messages[i] = message{To: ch, Msg: newMsg}
 			return nil
 		})
 	}
@@ -424,11 +419,11 @@ type findMessageFunc func(chat.Channel) *chat.Message
 
 func makeFindMessage(b *Bridge, origin chat.Channel, id chat.MessageID) findMessageFunc {
 	b.Lock()
-	var entry *logEntry
+	var entry []message
 outter:
 	for _, e := range b.log {
-		for _, c := range e.copies {
-			if c.to == origin && c.msg.ID == id {
+		for _, c := range e {
+			if c.To == origin && c.Msg.ID == id {
 				entry = e
 				break outter
 			}
@@ -439,9 +434,9 @@ outter:
 		if entry == nil {
 			return nil
 		}
-		for _, c := range entry.copies {
-			if c.to == ch {
-				return &c.msg
+		for _, c := range entry {
+			if c.To == ch {
+				return &c.Msg
 			}
 		}
 		return nil
