@@ -183,10 +183,9 @@ func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, er
 		return chat.Message{}, err
 	}
 
-	m := chatMessage(ch, &resp)
-	if msg.From != nil {
-		m.From = msg.From
-	}
+	from := msg.From
+	msg = *chatMessage(ch, &resp)
+	msg.From = from
 	return msg, nil
 }
 
