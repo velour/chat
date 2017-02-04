@@ -57,7 +57,7 @@ func TestFormatText(t *testing.T) {
 		{
 			name: "ĉapelita",
 			text: "/me links http://www.a.com",
-			want: "<b>ĉapelita:</b> <em>links </em>http://www.a.com",
+			want: "<b>ĉapelita</b> <em>links </em>http://www.a.com",
 		},
 	}
 	for _, test := range tests {

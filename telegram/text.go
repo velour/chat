@@ -31,11 +31,17 @@ func formatText(msg chat.Message) string {
 		if r, _ := utf8.DecodeRuneInString(rest); rest == "" || isNonNewlineSpace(r) {
 			text = trimSpace(rest)
 			text = emphasize(text)
-			return addName(msg.From, text)
+			if msg.From != nil {
+				text = "<b>" + msg.From.Name() + "</b> " + text
+			}
+			return text
 		}
 	}
 	text = trimSpace(text)
-	return addName(msg.From, text)
+	if msg.From != nil {
+		text = "<b>" + msg.From.Name() + ":</b> " + text
+	}
+	return text
 }
 
 func isNonNewlineSpace(r rune) bool { return r != '\n' && unicode.IsSpace(r) }
