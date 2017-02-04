@@ -206,29 +206,6 @@ func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, er
 	return *chatMessage(ch, &resp), nil
 }
 
-func (ch *channel) Who(ctx context.Context) ([]chat.User, error) {
-	// The bot API dosen't support getting all user, just admins.
-	// However, in non-supergroups, all users are often admins.
-	cms, err := getChatAdministrators(ctx, ch.client, ch.chat.ID)
-	if err != nil {
-		return nil, err
-	}
-	var users []chat.User
-	for _, cm := range cms {
-		ch.client.Lock()
-		u, ok := ch.client.users[cm.User.ID]
-		ch.client.Unlock()
-		if !ok {
-			continue
-		}
-		u.Lock()
-		user := u.User
-		u.Unlock()
-		users = append(users, *chatUser(ch, user))
-	}
-	return users, nil
-}
-
 func chatMessageID(m *Message) chat.MessageID {
 	return chat.MessageID(strconv.FormatUint(m.MessageID, 10))
 }

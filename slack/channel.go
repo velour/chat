@@ -225,25 +225,3 @@ func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, er
 	msg.ID = resp.TS
 	return msg, nil
 }
-
-func (ch *channel) Who(ctx context.Context) ([]chat.User, error) {
-	var resp struct {
-		ResponseHeader
-		Channel struct {
-			Members []chat.UserID `json:"members"`
-		} `json:"channel"`
-	}
-	if err := rpc(ctx, ch.client, &resp, "channels.info", "channel="+ch.ID); err != nil {
-		return nil, err
-	}
-	var users []chat.User
-	for _, id := range resp.Channel.Members {
-		u, err := getUser(ctx, ch, id)
-		if err != nil {
-			log.Printf("Failed to lookup Who user %s: %s\n", id, err)
-			continue
-		}
-		users = append(users, *u)
-	}
-	return users, nil
-}

@@ -146,16 +146,6 @@ loop:
 					panic(err)
 				}
 				break loop
-			case "WHO":
-				users, err := b.Who(ctx)
-				if err != nil {
-					log.Printf("Who failed: %s\n", err)
-					break loop
-				}
-				if _, err := chat.Say(ctx, b, whoTxt(users)); err != nil {
-					log.Printf("Sending who failed: %s\n", err)
-					break loop
-				}
 			}
 		}
 	}

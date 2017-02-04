@@ -192,13 +192,3 @@ func (ch *channel) Delete(context.Context, chat.Message) error { return nil }
 func (c *channel) Edit(_ context.Context, msg chat.Message) (chat.Message, error) {
 	return msg, nil
 }
-
-func (ch *channel) Who(context.Context) ([]chat.User, error) {
-	ch.mu.Lock()
-	defer ch.mu.Unlock()
-	var us []chat.User
-	for nick, _ := range ch.users {
-		us = append(us, *chatUser(ch, nick))
-	}
-	return us, nil
-}
