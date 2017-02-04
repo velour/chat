@@ -188,6 +188,10 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, text string) (ch
 
 func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, error) {
 	if msg.ReplyTo != nil {
+		if msg.ReplyTo.From == nil {
+			me := chatUser(ch.client.me)
+			msg.ReplyTo.From = &me
+		}
 		txt := "*" + msg.ReplyTo.From.Name() + "* said:\n>" + msg.ReplyTo.Text
 		if _, err := ch.send(ctx, msg.From, txt); err != nil {
 			return chat.Message{}, err

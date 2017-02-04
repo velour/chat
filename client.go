@@ -49,7 +49,8 @@ type Channel interface {
 	// If ReplyTo.ID is non-empty, it identifies a Message
 	// previously sent on this Channel.
 	// If ReplyTo.ID is empty, the exact ReplyTo Message is unknown.
-	// In both cases, ReplyTo.From is non-nil and ReplyTo.Text is non-empty.
+	// In both cases, ReplyTo.Text is non-empty.
+	// If ReplyTo.From is nil, ReplyTo was sent from this Channel's User.
 	//
 	// An implementation that does not support replies may ignore ReplyTo.
 	// However, as an enhancement, such an implementation

@@ -173,6 +173,11 @@ func (ch *channel) send(ctx context.Context, sendAs *chat.User, linePrefix, text
 
 func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, error) {
 	if msg.ReplyTo != nil {
+		if msg.ReplyTo.From == nil {
+			ch.client.Lock()
+			msg.ReplyTo.From = chatUser(ch, ch.client.nick)
+			ch.client.Unlock()
+		}
 		quote := "<" + msg.ReplyTo.From.Name() + "> "
 		if _, err := ch.send(ctx, msg.From, quote, msg.ReplyTo.Text); err != nil {
 			return chat.Message{}, nil
