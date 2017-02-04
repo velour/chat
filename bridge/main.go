@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"time"
 
 	"github.com/eaburns/pretty"
 	"github.com/golang/sync/errgroup"
@@ -127,6 +128,7 @@ func main() {
 		panic(err)
 	}
 
+	timeout := false
 loop:
 	for {
 		ev, err := b.Receive(ctx)
@@ -142,7 +144,13 @@ loop:
 		case chat.Message:
 			switch m.Text {
 			case "LEAVE":
-				if _, err := chat.Say(ctx, b, "Good bye"); err != nil {
+				if _, err := chat.Say(ctx, b, "Good bye!"); err != nil {
+					panic(err)
+				}
+				break loop
+			case "TIMEOUT":
+				timeout = true
+				if _, err := chat.Say(ctx, b, "Good bye for a bit…"); err != nil {
 					panic(err)
 				}
 				break loop
@@ -160,6 +168,9 @@ loop:
 		}
 		log.Printf("Bridge closed with error: %s", err)
 		group.Wait()
+	}
+	if timeout {
+		time.Sleep(10 * time.Minute)
 	}
 }
 
