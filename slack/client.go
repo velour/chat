@@ -30,9 +30,8 @@ var _ chat.Client = &Client{}
 // A Client represents a connection to the slack API.
 type Client struct {
 	token   string
-	id      string
+	me      *User
 	domain  string
-	me      User
 	webSock *websocket.Conn
 
 	pingError chan error
@@ -73,6 +72,7 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 		Team struct {
 			Domain string `json:"domain"`
 		} `json:"team"`
+		Users []User `json:"users"`
 	}
 	if err := rpc(ctx, c, &resp, "rtm.start"); err != nil {
 		return nil, err
@@ -82,7 +82,15 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 		return nil, err
 	}
 	c.webSock = webSock
-	c.id = resp.Self.ID
+	for _, u := range resp.Users {
+		if u.ID == resp.Self.ID {
+			c.me = &u
+		}
+		c.users[chat.UserID(u.ID)] = chatUser(&u)
+	}
+	if c.me == nil {
+		return nil, fmt.Errorf("self user %s not in users list", resp.Self.ID)
+	}
 	c.domain = resp.Team.Domain
 
 	switch event, err := c.next(ctx); {
@@ -98,6 +106,16 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 	go poll(bkg, c)
 
 	return c, nil
+}
+
+func chatUser(u *User) chat.User {
+	return chat.User{
+		ID:          chat.UserID(u.ID),
+		Nick:        u.Name,
+		FullName:    u.Profile.RealName,
+		DisplayName: u.Name,
+		PhotoURL:    u.Profile.Image,
+	}
 }
 
 // Close ends the Slack client connection
