@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"html"
 	"io"
 	"net/url"
 	"path"
@@ -182,10 +181,7 @@ func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, er
 	if err := rpc(ctx, ch.client, "sendMessage", req, &resp); err != nil {
 		return chat.Message{}, err
 	}
-
-	from := msg.From
-	msg = *chatMessage(ch, &resp)
-	msg.From = from
+	msg.ID = chatMessageID(&resp)
 	return msg, nil
 }
 
@@ -196,14 +192,15 @@ func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, er
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
 		"message_id": msg.ID,
-		"text":       html.EscapeString(msg.Text),
+		"text":       formatText(msg),
 		"parse_mode": "HTML",
 	}
 	var resp Message
 	if err := rpc(ctx, ch.client, "editMessageText", req, &resp); err != nil {
 		return chat.Message{}, err
 	}
-	return *chatMessage(ch, &resp), nil
+	msg.ID = chatMessageID(&resp)
+	return msg, nil
 }
 
 func chatMessageID(m *Message) chat.MessageID {
