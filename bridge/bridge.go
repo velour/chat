@@ -353,6 +353,14 @@ func editMessage(ctx context.Context, channels []chat.Channel, findMessage findM
 			if msg == nil {
 				return nil
 			}
+			if msg.Text == text {
+				// Don't call ch.Edit if the text hasn't changed.
+				// Telegram considers this an error.
+				// However, Slack generates such events.
+				// It's important not to drop them at the Slack level,
+				// because the bridge still needs to update the message ID.
+				return nil
+			}
 			m := *msg
 			m.Text = text
 			newMsg, err := ch.Edit(ctx, m)
