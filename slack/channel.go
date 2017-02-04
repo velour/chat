@@ -192,7 +192,7 @@ func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, er
 			me := chatUser(ch.client.me)
 			msg.ReplyTo.From = &me
 		}
-		txt := "*" + msg.ReplyTo.From.Name() + "* said:\n>" + msg.ReplyTo.Text
+		txt := "_" + msg.ReplyTo.From.Name() + " said_:\n>" + msg.ReplyTo.Text
 		if _, err := ch.send(ctx, msg.From, txt); err != nil {
 			return chat.Message{}, err
 		}
