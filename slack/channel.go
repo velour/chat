@@ -122,7 +122,7 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 	switch {
 	case u.Type == "message":
 		switch {
-		case u.SubType == "":
+		case u.SubType == "" || u.SubType == "me_message":
 			if u.User == "" {
 				return nil, nil
 			}
@@ -132,6 +132,9 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 			}
 			id := chat.MessageID(u.Ts)
 			text := fixText(findUser, html.UnescapeString(u.Text))
+			if u.SubType == "me_message" {
+				text = "/me " + text
+			}
 			return chat.Message{ID: id, From: user, Text: text}, nil
 
 		case u.SubType == "message_changed" && u.Message != nil:
