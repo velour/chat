@@ -10,7 +10,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/eaburns/pretty"
 	"github.com/velour/chat"
 )
 
@@ -120,8 +119,6 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 		return u.Name(), true
 	}
 
-	log.Printf("Update:\n%s\n", pretty.String(u))
-
 	switch {
 	case u.Type == "message":
 		switch {
@@ -152,6 +149,9 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 				Text: fixText(findUser, html.UnescapeString(u.Message.Text)),
 			}
 			return chat.Edit{OrigID: origID, New: msg}, nil
+
+		case u.SubType == "message_deleted":
+			return chat.Delete{ID: chat.MessageID(u.DeletedTS), Channel: ch}, nil
 
 		case u.SubType == "file_share" && u.File != nil && myURL != "":
 			if u.User == "" {

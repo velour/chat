@@ -108,14 +108,14 @@ func (e Message) Origin() Channel { return e.From.Channel }
 
 // A Delete is an event describing a message deleted by a user.
 type Delete struct {
-	// Who is the User who deleted the message.
-	Who User
-
 	// ID is the ID of the deleted message.
 	ID MessageID
+
+	// Channel is the origin of the delete event.
+	Channel Channel
 }
 
-func (e Delete) Origin() Channel { return e.Who.Channel }
+func (e Delete) Origin() Channel { return e.Channel }
 
 // An Edit is an event describing a message edited by a user.
 type Edit struct {
