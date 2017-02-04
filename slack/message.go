@@ -2,21 +2,6 @@ package slack
 
 import "github.com/velour/chat"
 
-type Message struct {
-	Token       string   `json:"token"`
-	Channel     string   `json:"channel"`
-	Text        string   `json:"text"`
-	Parse       bool     `json:"parse"`
-	LinkNames   string   `json:"link_names"`
-	Attachments []string `json:"attachments"`
-	UnfurlLinks bool     `json:"unfurl_links"`
-	UnfurlMedia bool     `json:"unfurl_media"`
-	Username    string   `json:"username"`
-	AsUser      string   `json:"as_user"`
-	IconUrl     string   `json:"icon_url"`
-	IconEmoji   string   `json:"icon_emoji"`
-}
-
 // Update represents a RTS update message.
 type Update struct {
 	ID      uint64      `json:"id"`
@@ -30,7 +15,8 @@ type Update struct {
 		Code uint64 `json:"code"`
 		Msg  string `json:"msg"`
 	} `json:"error"`
-	File `json:"file"`
+	*File   `json:"file"`
+	Message *Update `json:"message"`
 }
 
 // File represents a shared file.

@@ -10,6 +10,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/eaburns/pretty"
 	"github.com/velour/chat"
 )
 
@@ -103,15 +104,6 @@ func getUser(ctx context.Context, ch *channel, id chat.UserID) (*chat.User, erro
 // If the Update cannot be mapped, nil is returned with a nil error.
 // This signifies an Update that sholud be ignored.
 func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error) {
-	if u.User == "" {
-		// ignore updates without users.
-		return nil, nil
-	}
-	user, err := getUser(ctx, ch, u.User)
-	if err != nil {
-		return nil, err
-	}
-
 	var myURL string
 	ch.client.Lock()
 	if ch.client.localURL != nil {
@@ -119,29 +111,65 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 	}
 	ch.client.Unlock()
 
-	switch {
-	case u.Type == "message" && u.SubType == "file_share" && myURL != "":
-		fileURL, err := url.Parse(myURL)
+	findUser := func(id string) (string, bool) {
+		u, err := getUser(ctx, ch, chat.UserID(id))
 		if err != nil {
-			panic(err)
+			log.Printf("Failed to lookup mention user %s: %s\n", id, err)
+			return "", false
 		}
-		fileURL.Path = path.Join(fileURL.Path, u.File.ID)
-		text := "/me shared a file: " + fileURL.String()
-		id := chat.MessageID(u.Ts)
-		return chat.Message{ID: id, From: user, Text: text}, nil
+		return u.Name(), true
+	}
 
+	log.Printf("Update:\n%s\n", pretty.String(u))
+
+	switch {
 	case u.Type == "message":
-		id := chat.MessageID(u.Ts)
-		findUser := func(id string) (string, bool) {
-			u, err := getUser(ctx, ch, chat.UserID(id))
-			if err != nil {
-				log.Printf("Failed to lookup mention user %s: %s\n", id, err)
-				return "", false
+		switch {
+		case u.SubType == "":
+			if u.User == "" {
+				return nil, nil
 			}
-			return u.Name(), true
+			user, err := getUser(ctx, ch, u.User)
+			if err != nil {
+				return nil, err
+			}
+			id := chat.MessageID(u.Ts)
+			text := fixText(findUser, html.UnescapeString(u.Text))
+			return chat.Message{ID: id, From: user, Text: text}, nil
+
+		case u.SubType == "message_changed" && u.Message != nil:
+			if u.Message.User == "" {
+				return nil, nil
+			}
+			user, err := getUser(ctx, ch, u.Message.User)
+			if err != nil {
+				return nil, err
+			}
+			origID := chat.MessageID(u.Message.Ts)
+			msg := chat.Message{
+				ID:   chat.MessageID(u.Ts),
+				From: user,
+				Text: fixText(findUser, html.UnescapeString(u.Message.Text)),
+			}
+			return chat.Edit{OrigID: origID, New: msg}, nil
+
+		case u.SubType == "file_share" && u.File != nil && myURL != "":
+			if u.User == "" {
+				return nil, nil
+			}
+			user, err := getUser(ctx, ch, u.User)
+			if err != nil {
+				return nil, err
+			}
+			fileURL, err := url.Parse(myURL)
+			if err != nil {
+				panic(err)
+			}
+			fileURL.Path = path.Join(fileURL.Path, u.File.ID)
+			text := "/me shared a file: " + fileURL.String()
+			id := chat.MessageID(u.Ts)
+			return chat.Message{ID: id, From: user, Text: text}, nil
 		}
-		text := fixText(findUser, html.UnescapeString(u.Text))
-		return chat.Message{ID: id, From: user, Text: text}, nil
 	}
 	return nil, nil
 }
