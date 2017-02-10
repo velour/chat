@@ -10,7 +10,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/eaburns/pretty"
 	"github.com/velour/chat"
 )
 
@@ -104,8 +103,6 @@ func getUser(ctx context.Context, ch *channel, id chat.UserID) (*chat.User, erro
 // If the Update cannot be mapped, nil is returned with a nil error.
 // This signifies an Update that sholud be ignored.
 func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error) {
-	fmt.Printf("Update:\n%s\n", pretty.String(u))
-
 	var myURL string
 	ch.client.Lock()
 	if ch.client.localURL != nil {
@@ -126,7 +123,7 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 	case u.Type == "message":
 		switch {
 		case u.SubType == "" || u.SubType == "me_message":
-			if u.User == "" {
+			if u.User == "" || u.Text == "" {
 				return nil, nil
 			}
 			user, err := getUser(ctx, ch, u.User)
