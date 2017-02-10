@@ -15,9 +15,15 @@ type Update struct {
 		Code uint64 `json:"code"`
 		Msg  string `json:"msg"`
 	} `json:"error"`
-	*File     `json:"file"`
-	Message   *Update `json:"message"`
-	DeletedTS string  `json:"deleted_ts"`
+	*File       `json:"file"`
+	Message     *Update `json:"message"`
+	DeletedTS   string  `json:"deleted_ts"`
+	Attachments []struct {
+		Title      string `json:"title"`
+		ImageURL   string `json:"image_url"`
+		Footer     string `json:"footer"`
+		AuthorName string `json:"author_name"`
+	} `json:"attachments"`
 }
 
 // File represents a shared file.

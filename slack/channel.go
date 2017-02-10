@@ -2,6 +2,7 @@ package slack
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -77,8 +78,8 @@ func (ch *channel) Receive(ctx context.Context) (chat.Event, error) {
 	}
 }
 
-// getUser returns a chat.User of a userID for a user in this Channel.
-func getUser(ctx context.Context, ch *channel, id chat.UserID) (*chat.User, error) {
+// getUserByID returns a chat.User of a userID for a user in this Channel.
+func getUserByID(ctx context.Context, ch *channel, id chat.UserID) (*chat.User, error) {
 	ch.client.Lock()
 	defer ch.client.Unlock()
 
@@ -99,6 +100,20 @@ func getUser(ctx context.Context, ch *channel, id chat.UserID) (*chat.User, erro
 	return &u, nil
 }
 
+// getUserByNick looks up a user by their nick.
+func getUserByNick(ch *channel, nick string) (*chat.User, error) {
+	ch.client.Lock()
+	defer ch.client.Unlock()
+
+	for _, u := range ch.client.users {
+		if u.Nick == nick {
+			u.Channel = ch
+			return &u, nil
+		}
+	}
+	return nil, errors.New("nick not found: " + nick)
+}
+
 // chatEvent returns the chat event corresponding to the update.
 // If the Update cannot be mapped, nil is returned with a nil error.
 // This signifies an Update that sholud be ignored.
@@ -111,7 +126,7 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 	ch.client.Unlock()
 
 	findUser := func(id string) (string, bool) {
-		u, err := getUser(ctx, ch, chat.UserID(id))
+		u, err := getUserByID(ctx, ch, chat.UserID(id))
 		if err != nil {
 			log.Printf("Failed to lookup mention user %s: %s\n", id, err)
 			return "", false
@@ -122,11 +137,40 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 	switch {
 	case u.Type == "message":
 		switch {
+		case len(u.Attachments) > 0 && u.Attachments[0].ImageURL != "":
+			attachment := u.Attachments[0]
+			var user *chat.User
+			if u.User != "" {
+				var err error
+				if user, err = getUserByID(ctx, ch, u.User); err != nil {
+					return nil, err
+				}
+			} else {
+				// AuthorName isn't guaranteed to be a nick.
+				// Ignore any error, and defer to the the fallback case.
+				user, _ = getUserByNick(ch, attachment.AuthorName)
+			}
+			var text string
+			if user == nil {
+				text = attachment.AuthorName + " sent an image: "
+			} else {
+				text = "/me sent an image: "
+			}
+			if attachment.Title != "" {
+				text += attachment.Title + " — "
+			}
+			text += attachment.ImageURL
+			if attachment.Footer != "" {
+				text += "\n" + attachment.Footer
+			}
+			id := chat.MessageID(u.Ts)
+			return chat.Message{ID: id, From: user, Text: text}, nil
+
 		case u.SubType == "" || u.SubType == "me_message":
 			if u.User == "" || u.Text == "" {
 				return nil, nil
 			}
-			user, err := getUser(ctx, ch, u.User)
+			user, err := getUserByID(ctx, ch, u.User)
 			if err != nil {
 				return nil, err
 			}
@@ -141,7 +185,7 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 			if u.Message.User == "" {
 				return nil, nil
 			}
-			user, err := getUser(ctx, ch, u.Message.User)
+			user, err := getUserByID(ctx, ch, u.Message.User)
 			if err != nil {
 				return nil, err
 			}
@@ -160,7 +204,7 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 			if u.User == "" {
 				return nil, nil
 			}
-			user, err := getUser(ctx, ch, u.User)
+			user, err := getUserByID(ctx, ch, u.User)
 			if err != nil {
 				return nil, err
 			}

@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eaburns/pretty"
 	"github.com/velour/chat"
 
 	"golang.org/x/net/websocket"
@@ -431,11 +430,6 @@ var jsonCodec = websocket.Codec{
 	},
 
 	Unmarshal: func(data []byte, _ byte, v interface{}) error {
-		var m map[string]interface{}
-		if err := json.Unmarshal(data, &m); err != nil {
-			panic(err)
-		}
-		fmt.Printf("%s\n", pretty.String(m))
 		if err := json.Unmarshal(data, v); err != nil {
 			log.Printf("Error decoding JSON into %T: %s", v, err)
 			log.Println(string(data))
