@@ -50,7 +50,7 @@ type Client struct {
 	localURL *url.URL
 }
 
-// NewClient returns a new slack client using the given token.
+// Dial returns a new slack client using the given token.
 // The returned Client is connected to the RTM endpoint
 // and automatically sends pings.
 func Dial(ctx context.Context, token string) (*Client, error) {

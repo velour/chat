@@ -107,8 +107,8 @@ type Message struct {
 	GroupChatCreated      *bool                   `json:"group_chat_created"`
 	SupergroupChatCreated *bool                   `json:"supergroup_chat_created"`
 	ChannelChatCreated    *bool                   `json:"channel_chat_created"`
-	MigrateToChatId       *uint64                 `json:"migrate_to_chat_id"`
-	MigrateFromChatId     *uint64                 `json:"migrate_from_chat_id"`
+	MigrateToChatID       *uint64                 `json:"migrate_to_chat_id"`
+	MigrateFromChatID     *uint64                 `json:"migrate_from_chat_id"`
 	PinnedMessage         *Message                `json:"pinned_message"`
 }
 

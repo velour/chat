@@ -194,6 +194,6 @@ func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, er
 func (ch *channel) Delete(context.Context, chat.Message) error { return nil }
 
 // Edit is a no-op for IRC, it simply returns the given Message.
-func (c *channel) Edit(_ context.Context, msg chat.Message) (chat.Message, error) {
+func (ch *channel) Edit(_ context.Context, msg chat.Message) (chat.Message, error) {
 	return msg, nil
 }

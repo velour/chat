@@ -27,7 +27,7 @@ type File struct {
 	Mimetype           string `json:"mimetype"`
 }
 
-// Response is a header common to all slack HTTP responses.
+// ResponseHeader is a header common to all slack HTTP responses.
 // Each message type that is a response should embed ResponseHeader.
 type ResponseHeader struct {
 	OK      bool   `json:"ok"`
