@@ -15,9 +15,13 @@ type Update struct {
 		Code uint64 `json:"code"`
 		Msg  string `json:"msg"`
 	} `json:"error"`
-	*File       `json:"file"`
-	Message     *Update `json:"message"`
-	DeletedTS   string  `json:"deleted_ts"`
+	*File     `json:"file"`
+	Message   *Update `json:"message"`
+	DeletedTS string  `json:"deleted_ts"`
+	ThreadTS  string  `json:"thread_ts"`
+	Replies   []struct {
+		TS string `json:"ts"`
+	} `json:"replies"`
 	Attachments []struct {
 		Title      string `json:"title"`
 		ImageURL   string `json:"image_url"`

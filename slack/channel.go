@@ -24,6 +24,14 @@ type channel struct {
 	client *Client
 	in     chan []*Update
 	out    chan *Update
+
+	// replies is a map containing all received, unhandled replies, keyed by ID.
+	// In Slack, replies come across as two events:
+	// First the reply message with subtype="" and with thread_id=<ReplyTo ID>,
+	// then second, the reply-to message, with subtype="message_replied".
+	// We save the first here, attach it to the next message_replied subtype
+	// with the matching thread_id, and remove it from this list.
+	replies map[string]*chat.Message
 }
 
 // newChannel creates a new channel
@@ -40,6 +48,7 @@ func initChannel(c *Client, ch *channel) {
 	ch.client = c
 	ch.in = make(chan []*Update, 1)
 	ch.out = make(chan *Update)
+	ch.replies = make(map[string]*chat.Message)
 	go func() {
 		for us := range ch.in {
 			for _, u := range us {
@@ -125,15 +134,6 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 	}
 	ch.client.Unlock()
 
-	findUser := func(id string) (string, bool) {
-		u, err := getUserByID(ctx, ch, chat.UserID(id))
-		if err != nil {
-			log.Printf("Failed to lookup mention user %s: %s\n", id, err)
-			return "", false
-		}
-		return u.Name(), true
-	}
-
 	switch {
 	case u.Type == "message":
 		switch {
@@ -170,32 +170,59 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 			if u.User == "" || u.Text == "" {
 				return nil, nil
 			}
-			user, err := getUserByID(ctx, ch, u.User)
+			if u.ThreadTS != "" {
+				// This is the first message in a pair of reply events—save it.
+				msg, err := chatMessage(ctx, ch, u)
+				if err != nil {
+					return nil, err
+				}
+				log.Printf("stashing reply %s", u.Ts)
+				ch.replies[u.Ts] = msg
+				return nil, nil
+			}
+			if msg, err := chatMessage(ctx, ch, u); err != nil {
+				return nil, err
+			} else {
+				return *msg, nil
+			}
+
+		case u.SubType == "message_replied" && u.Message != nil:
+			log.Printf("handling a reply")
+			n := len(u.Message.Replies)
+			if n == 0 {
+				log.Printf("no replies array")
+				return nil, nil
+			}
+			ts := u.Message.Replies[n-1].TS
+
+			reply, ok := ch.replies[ts]
+			if !ok {
+				log.Printf("reply %s not found", ts)
+				return nil, nil
+			}
+			delete(ch.replies, ts)
+
+			if u.Message.User == "" {
+				log.Printf("no message user")
+				return nil, nil
+			}
+			replyTo, err := chatMessage(ctx, ch, u.Message)
 			if err != nil {
 				return nil, err
 			}
-			id := chat.MessageID(u.Ts)
-			text := fixText(findUser, html.UnescapeString(u.Text))
-			if u.SubType == "me_message" {
-				text = "/me " + text
-			}
-			return chat.Message{ID: id, From: user, Text: text}, nil
+			reply.ReplyTo = replyTo
+
+			return *reply, nil
 
 		case u.SubType == "message_changed" && u.Message != nil:
 			if u.Message.User == "" {
 				return nil, nil
 			}
-			user, err := getUserByID(ctx, ch, u.Message.User)
+			msg, err := chatMessage(ctx, ch, u.Message)
 			if err != nil {
 				return nil, err
 			}
-			origID := chat.MessageID(u.Message.Ts)
-			msg := chat.Message{
-				ID:   chat.MessageID(u.Ts),
-				From: user,
-				Text: fixText(findUser, html.UnescapeString(u.Message.Text)),
-			}
-			return chat.Edit{OrigID: origID, New: msg}, nil
+			return chat.Edit{OrigID: chat.MessageID(u.Message.Ts), New: *msg}, nil
 
 		case u.SubType == "message_deleted":
 			return chat.Delete{ID: chat.MessageID(u.DeletedTS), Channel: ch}, nil
@@ -219,6 +246,30 @@ func (ch *channel) chatEvent(ctx context.Context, u *Update) (chat.Event, error)
 		}
 	}
 	return nil, nil
+}
+
+func chatMessage(ctx context.Context, ch *channel, u *Update) (*chat.Message, error) {
+	user, err := getUserByID(ctx, ch, u.User)
+	if err != nil {
+		return nil, err
+	}
+	findUser := func(id string) (string, bool) {
+		u, err := getUserByID(ctx, ch, chat.UserID(id))
+		if err != nil {
+			log.Printf("Failed to lookup mention user %s: %s\n", id, err)
+			return "", false
+		}
+		return u.Name(), true
+	}
+	msg := &chat.Message{
+		ID:   chat.MessageID(u.Ts),
+		From: user,
+		Text: fixText(findUser, html.UnescapeString(u.Text)),
+	}
+	if u.SubType == "me_message" {
+		msg.Text = "/me " + msg.Text
+	}
+	return msg, nil
 }
 
 // Send sends text to the Channel and returns the sent Message.
