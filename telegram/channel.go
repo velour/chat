@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/url"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,11 @@ type channel struct {
 
 	// Created is the time that the Channel was created.
 	created time.Time
+
+	// noWebPreview is checked against send message text,
+	// and if it matches then web page preview is disabled
+	// for the message. If it is nil, nothing is matched.
+	noWebPreview *regexp.Regexp
 }
 
 func newChannel(client *Client, chat Chat) *channel {
@@ -61,6 +67,15 @@ func (ch *channel) Name() string {
 }
 
 func (ch *channel) ServiceName() string { return "Telegram" }
+
+// NoWebPreview sets the web preview suppression regexp.
+// On send, if a message text matches the regular expression,
+// web page preview is disabled for the message.
+//
+// If the nil regexp is set, nothing is matched.
+func (ch *channel) NoWebPreview(re *regexp.Regexp) {
+	ch.noWebPreview = re
+}
 
 func (ch *channel) Receive(ctx context.Context) (chat.Event, error) {
 	for {
@@ -170,9 +185,10 @@ func chatEvent(ch *channel, u *Update) (chat.Event, error) {
 
 func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, error) {
 	req := map[string]interface{}{
-		"chat_id":    ch.chat.ID,
-		"text":       formatText(msg),
-		"parse_mode": "HTML",
+		"chat_id":                  ch.chat.ID,
+		"text":                     formatText(msg),
+		"parse_mode":               "HTML",
+		"disable_web_page_preview": ch.noWebPreview != nil && ch.noWebPreview.MatchString(msg.Text),
 	}
 	if msg.ReplyTo != nil {
 		req["reply_to_message_id"] = msg.ReplyTo.ID

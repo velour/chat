@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"time"
 
 	"github.com/eaburns/pretty"
@@ -24,8 +25,9 @@ import (
 )
 
 var (
-	telegramToken = flag.String("telegram-token", "", "The bot's Telegram token")
-	telegramGroup = flag.String("telegram-group", "", "The bot's Telegram group ID")
+	telegramToken        = flag.String("telegram-token", "", "The bot's Telegram token")
+	telegramGroup        = flag.String("telegram-group", "", "The bot's Telegram group ID")
+	telegramNoWebPreview = flag.String("telegram-no-web-preview", "", "A regexp that prevents webpreview for sends if the text matches.")
 
 	ircNick    = flag.String("irc-nick", "", "The bot's IRC nickname")
 	ircPass    = flag.String("irc-password", "", "The bot's IRC password")
@@ -76,6 +78,16 @@ func main() {
 		telegramChannel, err := telegramClient.Join(ctx, *telegramGroup)
 		if err != nil {
 			panic(err)
+		}
+
+		if *telegramNoWebPreview != "" {
+			re, err := regexp.Compile(*telegramNoWebPreview)
+			if err != nil {
+				panic(err)
+			}
+			telegramChannel.(interface {
+				NoWebPreview(*regexp.Regexp)
+			}).NoWebPreview(re)
 		}
 
 		const telegramMediaPath = "/telegram/media/"
