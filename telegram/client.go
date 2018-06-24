@@ -15,6 +15,7 @@ import (
 	"path"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/velour/chat"
@@ -398,11 +399,21 @@ func getFile(ctx context.Context, c *Client, fileID string) (File, error) {
 	return resp, nil
 }
 
+var seq int32
+
 func rpc(ctx context.Context, c *Client, method string, req interface{}, resp interface{}) error {
+	n := atomic.AddInt32(&seq, 1)
+	log.Println("Telegram: starting RPC", n, "==>", req)
+	start := time.Now()
+	defer func() {
+		log.Println("Telegram: finishing RPC", n, time.Since(start))
+	}()
+
 	err := make(chan error, 1)
 	go func() { err <- _rpc(c, method, req, resp) }()
 	select {
 	case <-ctx.Done():
+		log.Println("Telegram RPC context error:", ctx.Err())
 		return ctx.Err()
 	case err := <-err:
 		if err != nil {
