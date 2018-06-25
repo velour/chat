@@ -9,32 +9,15 @@
 package websocket
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
-
-const (
-	// SendTimeout is the amount of time to wait on a Send before giving up.
-	SendTimeout = 5 * time.Second
-
-	// CloseRecvTimeout is the amount of time waiting during Close
-	// for the remote peer to send a Close message
-	// before shutting down the connection.
-	CloseRecvTimeout = 5 * time.Second
-
-	// HandshakeTimeout is the amount of time to wait
-	// for the connection handshake to complete.
-	HandshakeTimeout = 5 * time.Second
-)
-
-// ErrCloseSent is returned by Send if sending to a connection that is closing.
-var ErrCloseSent = websocket.ErrCloseSent
 
 // A HandshakeError is returned if Dial fails the handshake.
 type HandshakeError struct {
@@ -46,26 +29,30 @@ type HandshakeError struct {
 
 func (err HandshakeError) Error() string { return err.Status }
 
-var upgrader = websocket.Upgrader{
-	HandshakeTimeout: HandshakeTimeout,
-	CheckOrigin:      func(*http.Request) bool { return true },
-}
-
 // A Conn is a websocket connection.
 type Conn struct {
-	conn           *websocket.Conn
-	send           chan sendReq
-	recv           chan recvMsg
-	sendCloseOnce  sync.Once
-	sendCloseError error
+	conn   *websocket.Conn
+	send   chan sendReq
+	recv   chan recvMsg
+	closed chan struct{}
 }
 
 // Dial dials a websocket and returns a new Conn.
-//
 // If the handshake fails, a HandshakeError is returned.
-func Dial(URL *url.URL) (*Conn, error) {
-	hdr := make(http.Header)
-	conn, resp, err := websocket.DefaultDialer.Dial(URL.String(), hdr)
+func Dial(ctx context.Context, URL *url.URL) (*Conn, error) {
+	return DialHeader(ctx, make(http.Header), URL)
+}
+
+// DialHeader dials a websocket and returns a new Conn
+// using the given HTTP request header.
+// If the handshake fails, a HandshakeError is returned.
+func DialHeader(ctx context.Context, header http.Header, URL *url.URL) (*Conn, error) {
+	var dialer = *websocket.DefaultDialer
+	if dl, ok := ctx.Deadline(); ok {
+		dialer.HandshakeTimeout = time.Until(dl)
+	}
+
+	conn, resp, err := dialer.Dial(URL.String(), header)
 	if err == websocket.ErrBadHandshake && resp.StatusCode != http.StatusOK {
 		return nil, HandshakeError{Status: resp.Status, StatusCode: resp.StatusCode}
 	}
@@ -76,7 +63,16 @@ func Dial(URL *url.URL) (*Conn, error) {
 }
 
 // Upgrade upgrades an HTTP handler and returns an new *Conn.
-func Upgrade(w http.ResponseWriter, req *http.Request) (*Conn, error) {
+func Upgrade(ctx context.Context, w http.ResponseWriter, req *http.Request) (*Conn, error) {
+	var upgrader = websocket.Upgrader{
+		// There is no DefaultUpgrader, so use the timeout from the Dialer.
+		HandshakeTimeout: websocket.DefaultDialer.HandshakeTimeout,
+		CheckOrigin:      func(*http.Request) bool { return true },
+	}
+	if dl, ok := ctx.Deadline(); ok {
+		upgrader.HandshakeTimeout = time.Until(dl)
+	}
+
 	conn, err := upgrader.Upgrade(w, req, nil)
 	if err != nil {
 		return nil, err
@@ -86,53 +82,50 @@ func Upgrade(w http.ResponseWriter, req *http.Request) (*Conn, error) {
 
 func newConn(conn *websocket.Conn) *Conn {
 	c := &Conn{
-		conn: conn,
-		send: make(chan sendReq, 10),
-		recv: make(chan recvMsg, 10),
+		conn:   conn,
+		send:   make(chan sendReq, 10),
+		recv:   make(chan recvMsg, 10),
+		closed: make(chan struct{}),
 	}
 	go c.goSend()
 	go c.goRecv()
 	return c
 }
 
-// Close closes the websocket connection,
-// unblocking any blocked calls to Recv or Send,
-// and blocks until the closing handshake completes
-// or CloseRecvTimeout timeout expires.
-//
-// Close should not be called more than once.
-func (c *Conn) Close() error {
+// Close sends a close message to the peer and closes the websocket.
+// If the context has a deadline, that deadline is used to wait for the close to send,
+// otherwise it uses a 1 second deadline.
+func (c *Conn) Close(ctx context.Context) error {
+	dl := time.Now().Add(1 * time.Second)
+	if d, ok := ctx.Deadline(); ok {
+		dl = d
+	}
+	c.conn.WriteControl(websocket.CloseMessage, nil, dl)
+
 	close(c.send)
-
-	err := c.sendClose()
-	timer := time.NewTimer(CloseRecvTimeout)
-	if err != nil {
-		timer.Stop()
-		c.conn.Close()
+	close(c.closed)
+	for range c.recv {
 	}
 
-	for {
-		select {
-		case _, ok := <-c.recv:
-			if !ok {
-				if timer.Stop() {
-					err = c.conn.Close()
-				}
-				return err
-			}
-		case <-timer.C:
-			err = c.conn.Close()
-		}
-	}
+	return c.conn.Close()
 }
 
 // Send sends a JSON-encoded message.
 //
 // Send must not be called on a closed connection.
-func (c *Conn) Send(msg interface{}) error {
+func (c *Conn) Send(ctx context.Context, msg interface{}) error {
 	result := make(chan error)
-	c.send <- sendReq{msg: msg, result: result}
-	return <-result
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case c.send <- sendReq{msg: msg, result: result}:
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case r := <-result:
+		return r
+	}
 }
 
 type sendReq struct {
@@ -142,10 +135,7 @@ type sendReq struct {
 
 func (c *Conn) goSend() {
 	for req := range c.send {
-		dl := time.Now().Add(SendTimeout)
-		c.conn.SetWriteDeadline(dl)
-		err := c.conn.WriteJSON(req.msg)
-		req.result <- err
+		req.result <- c.conn.WriteJSON(req.msg)
 	}
 }
 
@@ -156,18 +146,22 @@ func (c *Conn) goSend() {
 // otherwise the connection will not respond to ping/pong messages.
 //
 // Calling Recv on a closed connection returns io.EOF.
-func (c *Conn) Recv(msg interface{}) error {
-	r, ok := <-c.recv
-	if !ok {
-		return io.EOF
+func (c *Conn) Recv(ctx context.Context, msg interface{}) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case r, ok := <-c.recv:
+		if !ok {
+			return io.EOF
+		}
+		if r.err != nil {
+			return r.err
+		}
+		if msg == nil {
+			return nil
+		}
+		return json.Unmarshal(r.p, msg)
 	}
-	if r.err != nil {
-		return r.err
-	}
-	if msg == nil {
-		return nil
-	}
-	return json.Unmarshal(r.p, msg)
 }
 
 type recvMsg struct {
@@ -177,32 +171,27 @@ type recvMsg struct {
 
 func (c *Conn) goRecv() {
 	defer close(c.recv)
-
 	for {
-		messageType, p, err := c.conn.ReadMessage()
-		if messageType == websocket.TextMessage {
-			c.recv <- recvMsg{p: p, err: err}
+		var t int
+		var m recvMsg
+		t, m.p, m.err = c.conn.ReadMessage()
+		if _, ok := m.err.(*websocket.CloseError); ok {
+			// We got a close. Subsequent calls to Recv will return io.EOF.
+			// We will reply to the close when the caller calls Close().
+			return
 		}
-		if err != nil {
-			// If this errors, a subsequent call to Close will return the error.
-			c.sendClose()
-			// ReadMessage cannot receive messages after it returns an error.
-			// So give up on waiting for a Close from the peer.
+		if m.err == nil && t != websocket.TextMessage {
+			continue
+		}
+		// Send the bytes or the error to the next receiver,
+		// but don't wait in the case that the connection was closed.
+		select {
+		case c.recv <- m:
+		case <-c.closed:
+			return
+		}
+		if m.err != nil {
 			return
 		}
 	}
-}
-
-func (c *Conn) sendClose() error {
-	c.sendCloseOnce.Do(func() {
-		dl := time.Now().Add(SendTimeout)
-		c.sendCloseError = c.conn.WriteControl(websocket.CloseMessage, nil, dl)
-		// If we receive a Close from the peer,
-		// gorilla will send the Close response for us.
-		// We don't bother tracking this, so just ignore this. error.
-		if c.sendCloseError == websocket.ErrCloseSent {
-			c.sendCloseError = nil
-		}
-	})
-	return c.sendCloseError
 }
