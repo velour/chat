@@ -333,12 +333,25 @@ func sendMessage(ctx context.Context, b *Bridge, channels []chat.Channel, msg *c
 				return fmt.Errorf("failed to send message to %s on %s: %s\n",
 					ch.Name(), ch.ServiceName(), err)
 			}
-			messages[i] = message{To: ch, Msg: m}
+			// Don't store the message if the deadline exceeted;
+			// because it'll just be a bogus, empty message.
+			// We don't want to accidentally re-use it.
+			if err != context.DeadlineExceeded {
+				messages[i] = message{To: ch, Msg: m}
+			}
 			return nil
 		})
 	}
 	if err := group.Wait(); err != nil {
 		return nil, err
+	}
+	// Remove any messages with an empty To; these were timeouts.
+	var i int
+	for _, m := range messages {
+		if m.To != nil {
+			messages[i] = m
+			i++
+		}
 	}
 	return messages, nil
 }
@@ -350,7 +363,7 @@ func editMessage(ctx context.Context, channels []chat.Channel, findMessage findM
 		i, ch := i, ch
 		group.Go(func() error {
 			msg := findMessage(ch)
-			if msg == nil {
+			if msg == nil || msg.ID == "" {
 				return nil
 			}
 			if msg.Text == text {

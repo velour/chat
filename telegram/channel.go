@@ -205,6 +205,9 @@ func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, er
 func (ch *channel) Delete(context.Context, chat.Message) error { return nil }
 
 func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, error) {
+	if msg.ID == "" {
+		panic("bad edit")
+	}
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
 		"message_id": msg.ID,
