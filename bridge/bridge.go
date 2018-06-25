@@ -313,18 +313,22 @@ func sendMessage(ctx context.Context, b *Bridge, channels []chat.Channel, msg *c
 		findReply = makeFindMessage(b, msg.Origin(), msg.ReplyTo.ID)
 	}
 
-	// Limit the time we wait for the sends.
-	// For example, IRC can block almost indefinitely due to rate-limiting.
-	// We don't want to hang the bridge, instead, wait for a short time,
-	// and give up on any error returns from whatever didn't finish.
-	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second))
-	defer cancel()
-
 	var group errgroup.Group
 	messages := make([]message, len(channels))
 	for i, ch := range channels {
 		i, ch := i, ch
 		group.Go(func() error {
+			if _, ok := ch.(interface{ IsIRC() }); ok {
+				// Limit the time we will wait for IRC sends to return.
+				// Due to rate-limiting imposed by, for example, Freenode,
+				// the IRC client can block almost indefinitely on a send.
+				// If it doesn't return in time, we just ignore the return and move on.
+				// It hardly matters anyway,  since IRC doesn't support edit anyway.
+				var c context.CancelFunc
+				ctx, c = context.WithDeadline(ctx, time.Now().Add(time.Second))
+				defer c()
+			}
+
 			var err error
 			m := *msg
 			m.ReplyTo = findReply(ch)
