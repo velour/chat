@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"strconv"
 	"sync"
 	"time"
@@ -121,7 +122,10 @@ func (b *Bridge) Close(ctx context.Context) error {
 // errors coming from channel polling,
 // and closing the bridge.
 func mux(ctx context.Context, cancel context.CancelFunc, b *Bridge) {
-	defer cancel()
+	defer func() {
+		log.Println("canceling mux")
+		cancel()
+	}()
 	defer close(b.closeError)
 	for {
 		select {
