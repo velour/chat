@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/url"
 	"path"
@@ -206,7 +207,7 @@ func (ch *channel) Delete(context.Context, chat.Message) error { return nil }
 
 func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, error) {
 	if msg.ID == "" {
-		panic("bad edit")
+		return chat.Message{}, errors.New("invalid, empty message ID")
 	}
 	req := map[string]interface{}{
 		"chat_id":    ch.chat.ID,
@@ -216,6 +217,10 @@ func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, er
 	}
 	var resp Message
 	if err := rpc(ctx, ch.client, "editMessageText", req, &resp); err != nil {
+		if strings.Contains(err.Error(), "message is not modified") {
+			// Ignore this. It is not an error.
+			return msg, nil
+		}
 		return chat.Message{}, err
 	}
 	msg.ID = chatMessageID(&resp)
