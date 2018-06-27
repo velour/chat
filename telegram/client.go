@@ -443,7 +443,7 @@ func _rpc(c *Client, method string, req interface{}, resp interface{}) error {
 
 const (
 	maxRetry   = 3
-	retryDelay = 250 * time.Millisecond
+	retryDelay = 5 * time.Second
 )
 
 // reqWithRetry makes an HTTP request to the URL, retrying on a 500 response.
