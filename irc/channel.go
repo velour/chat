@@ -52,6 +52,8 @@ type channel struct {
 	users map[string]bool
 }
 
+func (*channel) IsIRC() {}
+
 func newChannel(client *Client, name string) *channel {
 	ch := &channel{
 		client:   client,

@@ -443,7 +443,7 @@ func _rpc(c *Client, method string, req interface{}, resp interface{}) error {
 
 const (
 	maxRetry   = 3
-	retryDelay = 250 * time.Millisecond
+	retryDelay = 5 * time.Second
 )
 
 // reqWithRetry makes an HTTP request to the URL, retrying on a 500 response.
@@ -470,6 +470,16 @@ func reqWithRetry(url, method string, req interface{}) (*http.Response, error) {
 		if c := httpResp.StatusCode; c < 500 || c >= 600 {
 			return httpResp, nil
 		}
+		// We got a 500 response, so try to close that persistent connection.
+		// Sometimes Telegram consistently returns 502 (Bad Gateway)
+		// even across retries. We've found that restarting the app fixes it.
+		// Best guess: the persistent connection is in some bad state,
+		// and getting a new connection will resolve it.
+		// Possibly, we are actually connected to a reverse proxy
+		// where the machine on the far end has gone away,
+		// and now the proxy is rejecting requests on our connection
+		// that used to map to a machine now gone.
+		http.DefaultTransport.(*http.Transport).CloseIdleConnections()
 		i++
 		if i == maxRetry {
 			log.Printf("Method %s got %s response, giving up", method, httpResp.Status)

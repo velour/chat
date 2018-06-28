@@ -313,18 +313,22 @@ func sendMessage(ctx context.Context, b *Bridge, channels []chat.Channel, msg *c
 		findReply = makeFindMessage(b, msg.Origin(), msg.ReplyTo.ID)
 	}
 
-	// Limit the time we wait for the sends.
-	// For example, IRC can block almost indefinitely due to rate-limiting.
-	// We don't want to hang the bridge, instead, wait for a short time,
-	// and give up on any error returns from whatever didn't finish.
-	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second))
-	defer cancel()
-
 	var group errgroup.Group
 	messages := make([]message, len(channels))
 	for i, ch := range channels {
 		i, ch := i, ch
 		group.Go(func() error {
+			if _, ok := ch.(interface{ IsIRC() }); ok {
+				// Limit the time we will wait for IRC sends to return.
+				// Due to rate-limiting imposed by, for example, Freenode,
+				// the IRC client can block almost indefinitely on a send.
+				// If it doesn't return in time, we just ignore the return and move on.
+				// It hardly matters anyway,  since IRC doesn't support edit anyway.
+				var c context.CancelFunc
+				ctx, c = context.WithDeadline(ctx, time.Now().Add(time.Second))
+				defer c()
+			}
+
 			var err error
 			m := *msg
 			m.ReplyTo = findReply(ch)
@@ -333,12 +337,25 @@ func sendMessage(ctx context.Context, b *Bridge, channels []chat.Channel, msg *c
 				return fmt.Errorf("failed to send message to %s on %s: %s\n",
 					ch.Name(), ch.ServiceName(), err)
 			}
-			messages[i] = message{To: ch, Msg: m}
+			// Don't store the message if the deadline exceeted;
+			// because it'll just be a bogus, empty message.
+			// We don't want to accidentally re-use it.
+			if err != context.DeadlineExceeded {
+				messages[i] = message{To: ch, Msg: m}
+			}
 			return nil
 		})
 	}
 	if err := group.Wait(); err != nil {
 		return nil, err
+	}
+	// Remove any messages with an empty To; these were timeouts.
+	var i int
+	for _, m := range messages {
+		if m.To != nil {
+			messages[i] = m
+			i++
+		}
 	}
 	return messages, nil
 }
@@ -350,7 +367,7 @@ func editMessage(ctx context.Context, channels []chat.Channel, findMessage findM
 		i, ch := i, ch
 		group.Go(func() error {
 			msg := findMessage(ch)
-			if msg == nil {
+			if msg == nil || msg.ID == "" {
 				return nil
 			}
 			if msg.Text == text {
