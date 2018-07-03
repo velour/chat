@@ -328,10 +328,17 @@ func (ch *channel) Send(ctx context.Context, msg chat.Message) (chat.Message, er
 
 func (ch *channel) Delete(ctx context.Context, msg chat.Message) error {
 	var resp ResponseHeader
-	return rpc(ctx, ch.client, &resp,
+	err := rpc(ctx, ch.client, &resp,
 		"chat.delete",
 		"ts="+string(msg.ID),
 		"channel="+ch.ID)
+	if err != nil {
+		if rpcErr, ok := err.(rpcErr); ok && rpcErr.httpStatus == 404 {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, error) {
@@ -339,11 +346,15 @@ func (ch *channel) Edit(ctx context.Context, msg chat.Message) (chat.Message, er
 		ResponseHeader
 		TS chat.MessageID `json:"ts"`
 	}
-	if err := rpc(ctx, ch.client, &resp,
+	err := rpc(ctx, ch.client, &resp,
 		"chat.update",
 		"channel="+ch.ID,
 		"ts="+string(msg.ID),
-		"text="+msg.Text); err != nil {
+		"text="+msg.Text)
+	if err != nil {
+		if rpcErr, ok := err.(rpcErr); ok && rpcErr.httpStatus == 404 {
+			return msg, nil
+		}
 		return chat.Message{}, err
 	}
 	msg.ID = resp.TS

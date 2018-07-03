@@ -1,6 +1,5 @@
 // +build ignore
 
-// Package main is a demo to "test" the Telegram bot Client API.
 package main
 
 import (
@@ -13,12 +12,14 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/eaburns/pretty"
 	"github.com/golang/sync/errgroup"
 	"github.com/velour/chat"
 	"github.com/velour/chat/bridge"
+	"github.com/velour/chat/discord"
 	"github.com/velour/chat/irc"
 	"github.com/velour/chat/slack"
 	"github.com/velour/chat/telegram"
@@ -36,6 +37,9 @@ var (
 
 	slackToken = flag.String("slack-token", "", "The bot's Slack token")
 	slackRoom  = flag.String("slack-room", "", "The bot's slack room name (not ID)")
+
+	discordToken   = flag.String("discord-token", "", "The bot's Discord token")
+	discordChannel = flag.String("discord-channel", "", "Discord server_name:channel_name")
 
 	httpPublic = flag.String("http-public", "http://localhost:8888", "The bridge's public base URL")
 	httpServe  = flag.String("http-serve", "localhost:8888", "The bridge's HTTP server host")
@@ -116,16 +120,28 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		const slackMediaPath = "/slack/media/"
-		http.Handle(slackMediaPath, slackClient)
-		baseURL, err := url.Parse(*httpPublic)
+		channels = append(channels, slackChannel)
+	}
+
+	if *discordToken != "" {
+		serverChan := strings.Split(*discordChannel, ":")
+		if *discordChannel != "" && len(serverChan) != 2 {
+			panic("malformed -discord-channel")
+		}
+		discordClient, err := discord.Dial(ctx, *discordToken)
 		if err != nil {
 			panic(err)
 		}
-		baseURL.Path = path.Join(baseURL.Path, slackMediaPath)
-		slackClient.SetLocalURL(*baseURL)
-
-		channels = append(channels, slackChannel)
+		defer func() {
+			if err := discordClient.Close(ctx); err != nil {
+				panic(err)
+			}
+		}()
+		discordChan, err := discordClient.Join(ctx, serverChan[0], serverChan[1])
+		if err != nil {
+			panic(err)
+		}
+		channels = append(channels, discordChan)
 	}
 
 	go http.ListenAndServe(*httpServe, nil)

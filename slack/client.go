@@ -383,6 +383,13 @@ func rpc(ctx context.Context, c *Client, resp Response, method string, args ...s
 	}
 }
 
+type rpcErr struct {
+	httpStatus int
+	msg        string
+}
+
+func (err rpcErr) Error() string { return err.msg }
+
 func _rpc(c *Client, resp Response, method string, args []string) error {
 	u := rpcURL(c, method, args)
 	httpResp, err := http.Get(u.String())
@@ -396,7 +403,7 @@ func _rpc(c *Client, resp Response, method string, args []string) error {
 	}
 	if h := resp.Header(); !h.OK {
 		log.Printf("Slack RPC %s %+v response error: %s\n", method, args, h.Error)
-		return errors.New(h.Error)
+		return rpcErr{httpStatus: httpResp.StatusCode, msg: h.Error}
 	} else if h.Warning != "" {
 		log.Printf("Slack RPC %s %+v response warning: %s\n", method, args, h.Warning)
 	}

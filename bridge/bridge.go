@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"strconv"
 	"sync"
 	"time"
@@ -121,7 +122,10 @@ func (b *Bridge) Close(ctx context.Context) error {
 // errors coming from channel polling,
 // and closing the bridge.
 func mux(ctx context.Context, cancel context.CancelFunc, b *Bridge) {
-	defer cancel()
+	defer func() {
+		log.Println("canceling mux")
+		cancel()
+	}()
 	defer close(b.closeError)
 	for {
 		select {
@@ -318,6 +322,8 @@ func sendMessage(ctx context.Context, b *Bridge, channels []chat.Channel, msg *c
 	for i, ch := range channels {
 		i, ch := i, ch
 		group.Go(func() error {
+			// Create a local copy the context, so we can add a deadline.
+			ctx := ctx
 			if _, ok := ch.(interface{ IsIRC() }); ok {
 				// Limit the time we will wait for IRC sends to return.
 				// Due to rate-limiting imposed by, for example, Freenode,
@@ -328,22 +334,25 @@ func sendMessage(ctx context.Context, b *Bridge, channels []chat.Channel, msg *c
 				ctx, c = context.WithDeadline(ctx, time.Now().Add(time.Second))
 				defer c()
 			}
-
 			var err error
 			m := *msg
 			m.ReplyTo = findReply(ch)
 			m, err = ch.Send(ctx, m)
-			if err != nil && err != context.DeadlineExceeded {
+			log.Println(ch.ServiceName(), "err:", err)
+			switch {
+			case err == context.DeadlineExceeded:
+				log.Println(ch.ServiceName(), "ignoring exceeded error")
+				return nil
+			case err != nil:
 				return fmt.Errorf("failed to send message to %s on %s: %s\n",
 					ch.Name(), ch.ServiceName(), err)
-			}
-			// Don't store the message if the deadline exceeted;
-			// because it'll just be a bogus, empty message.
-			// We don't want to accidentally re-use it.
-			if err != context.DeadlineExceeded {
+			default:
+				// Don't store the message if the deadline exceeted;
+				// because it'll just be a bogus, empty message.
+				// We don't want to accidentally re-use it.
 				messages[i] = message{To: ch, Msg: m}
+				return nil
 			}
-			return nil
 		})
 	}
 	if err := group.Wait(); err != nil {
