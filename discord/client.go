@@ -15,6 +15,7 @@ import (
 	"path"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unicode"
@@ -51,6 +52,7 @@ type Client struct {
 	mu           sync.Mutex
 	joined       map[string]*Channel
 	deletes      map[string]bool
+	userNames    map[string]string // user names by ID.
 	rewriteNames map[string]string
 }
 
@@ -63,6 +65,7 @@ func Dial(ctx context.Context, token string) (*Client, error) {
 		rpcReq:           make(chan rpc),
 		joined:           make(map[string]*Channel),
 		deletes:          make(map[string]bool),
+		userNames:        make(map[string]string),
 		rewriteNames:     make(map[string]string),
 	}
 
@@ -186,7 +189,7 @@ type event struct {
 	IDs []string `json:"ids"`
 }
 
-func dispatchEvent(cl *Client, t string, data interface{}) error {
+func dispatchEvent(ctx context.Context, cl *Client, t string, data interface{}) error {
 	// Hack: ctonvert an event held in an annoying map format into a struct
 	// by using the json package.
 	b, err := json.Marshal(data)
@@ -203,13 +206,18 @@ func dispatchEvent(cl *Client, t string, data interface{}) error {
 	if !ok || ev.Author != nil && ev.Author.ID == cl.userID {
 		return nil
 	}
+	if ev.Author != nil {
+		cl.mu.Lock()
+		cl.userNames[ev.Author.ID] = ev.Author.Username
+		cl.mu.Unlock()
+	}
 	switch t {
 	case "MESSAGE_CREATE":
-		if m := eventMessage(ch, &ev); m.From != nil {
+		if m := eventMessage(ctx, ch, &ev); m.From != nil {
 			send(ch, m)
 		}
 	case "MESSAGE_UPDATE":
-		if m := eventMessage(ch, &ev); m.From != nil {
+		if m := eventMessage(ctx, ch, &ev); m.From != nil {
 			send(ch, chat.Edit{OrigID: chat.MessageID(ev.ID), New: m})
 		}
 	case "MESSAGE_DELETE":
@@ -255,12 +263,39 @@ func send(ch *Channel, e chat.Event) {
 	}
 }
 
-func eventMessage(ch *Channel, ev *event) chat.Message {
+func eventMessage(ctx context.Context, ch *Channel, ev *event) chat.Message {
 	var m chat.Message
 	m.ID = chat.MessageID(ev.ID)
 	m.From = authorUser(ch, ev.Author)
-	m.Text = ev.Content
+	m.Text = decodeMentions(ctx, ch.cl, ev.Content)
 	return m
+}
+
+func decodeMentions(ctx context.Context, cl *Client, text string) string {
+	const open, close = "<@", ">"
+	var s strings.Builder
+	for {
+		i := strings.Index(text, open)
+		if i < 0 {
+			break
+		}
+		j := strings.Index(text, close)
+		if j <= i+len(open) {
+			// There is no ending, so just return whatever we have.
+			break
+		}
+		id := text[i+len(open) : j]
+		name, err := userName(ctx, cl, id)
+		if err != nil {
+			log.Printf("failed to decode @-mention for %s: %s", id, err)
+			break
+		}
+		s.WriteString(text[:i])
+		s.WriteRune('@')
+		s.WriteString(name)
+		text = text[j+1:]
+	}
+	return s.String() + text
 }
 
 func authorUser(ch *Channel, au *user) *chat.User {
@@ -282,6 +317,25 @@ func authorUser(ch *Channel, au *user) *chat.User {
 	u.PhotoURL = cdnURL + path.Join("avatars", au.ID, au.Avatar+".png")
 	ch.cl.mu.Unlock()
 	return &u
+}
+
+// userName returns the user's name from their ID.
+func userName(ctx context.Context, cl *Client, userID string) (string, error) {
+	cl.mu.Lock()
+	n, ok := cl.userNames[userID]
+	cl.mu.Unlock()
+	if ok {
+		return n, nil
+	}
+
+	var u user
+	if err := cl.get(ctx, "/users/"+userID, &u); err != nil {
+		return "", err
+	}
+	cl.mu.Lock()
+	cl.userNames[userID] = u.Username
+	cl.mu.Unlock()
+	return u.Username, nil
 }
 
 func runWithRetry(ctx context.Context, cl *Client, ready chan<- error) {
@@ -379,7 +433,7 @@ func run(ctx context.Context, cl *Client, conn *websocket.Conn, s *session) erro
 				return errInvalidSession
 			case m.Op == OpDispatch:
 				s.seq = m.S
-				dispatchEvent(cl, m.T, m.D)
+				dispatchEvent(ctx, cl, m.T, m.D)
 			}
 		}
 	}
