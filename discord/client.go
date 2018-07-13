@@ -48,21 +48,22 @@ type Client struct {
 	backgroundDone   chan error
 	rpcReq           chan rpc
 
-	mu      sync.Mutex
-	joined  map[string]*Channel
-	deletes map[string]bool
+	mu           sync.Mutex
+	joined       map[string]*Channel
+	deletes      map[string]bool
+	rewriteNames map[string]string
 }
 
 func Dial(ctx context.Context, token string) (*Client, error) {
-
 	background, cancel := context.WithCancel(ctx)
 	cl := &Client{
 		token:            token,
 		cancelBackground: cancel,
 		backgroundDone:   make(chan error),
+		rpcReq:           make(chan rpc),
 		joined:           make(map[string]*Channel),
 		deletes:          make(map[string]bool),
-		rpcReq:           make(chan rpc),
+		rewriteNames:     make(map[string]string),
 	}
 
 	go limitRPCs(background, cl.rpcReq)
@@ -131,6 +132,15 @@ func (cl *Client) Join(ctx context.Context, guildName, chName string) (chat.Chan
 	return ch, nil
 }
 
+// RewriteName adds a re-write rule that changes the display name
+// for a user with the name 'from' into the name 'to'.
+// This is useful for users who use different names on different chat services.
+func (cl *Client) RewriteName(from, to string) {
+	cl.mu.Lock()
+	cl.rewriteNames[from] = to
+	cl.mu.Unlock()
+}
+
 type idAndName struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -189,7 +199,6 @@ func dispatchEvent(cl *Client, t string, data interface{}) error {
 		log.Println("Discord failed to unmarshal", pretty.String(data))
 		return err
 	}
-
 	ch, ok := getChannel(cl, ev.ChannelID)
 	if !ok || ev.Author != nil && ev.Author.ID == cl.userID {
 		return nil
@@ -262,7 +271,12 @@ func authorUser(ch *Channel, au *user) *chat.User {
 	u.ID = chat.UserID(au.ID)
 	u.Nick = au.Username
 	u.FullName = au.Username
-	u.DisplayName = au.Username
+
+	u.DisplayName = ch.cl.rewriteNames[au.Username]
+	if u.DisplayName == "" {
+		u.DisplayName = au.Username
+	}
+
 	u.Channel = ch
 	ch.cl.mu.Lock()
 	u.PhotoURL = cdnURL + path.Join("avatars", au.ID, au.Avatar+".png")
