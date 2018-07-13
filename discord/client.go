@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -599,6 +600,7 @@ type respOrError struct {
 }
 
 func limitRPCs(ctx context.Context, rpcs <-chan rpc) {
+	var errRetries int
 	limits := make(map[string]time.Time)
 	for {
 		select {
@@ -611,6 +613,13 @@ func limitRPCs(ctx context.Context, rpcs <-chan rpc) {
 			}
 		retry:
 			r, err := http.DefaultClient.Do(rpc.req.WithContext(ctx))
+			if err == nil && r.StatusCode == http.StatusInternalServerError && errRetries < 3 {
+				ms := 500 * math.Pow(2, float64(errRetries))
+				time.Sleep(time.Millisecond * time.Duration(ms))
+				errRetries++
+				goto retry
+			}
+			errRetries = 0
 			if err == nil && r.StatusCode == http.StatusTooManyRequests {
 				retry, err := retryHeader(r.Header, "Retry-After")
 				if err == nil {
