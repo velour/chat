@@ -3,10 +3,8 @@ package discord
 import (
 	"context"
 	"io"
-	"log"
 	"strings"
 
-	"github.com/eaburns/pretty"
 	"github.com/velour/chat"
 )
 
@@ -64,7 +62,6 @@ func (ch *Channel) Receive(ctx context.Context) (chat.Event, error) {
 		if !ok {
 			return nil, io.EOF
 		}
-		log.Println("recieved", pretty.String(ev))
 		return ev, nil
 	}
 }
