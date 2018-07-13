@@ -38,8 +38,9 @@ var (
 	slackToken = flag.String("slack-token", "", "The bot's Slack token")
 	slackRoom  = flag.String("slack-room", "", "The bot's slack room name (not ID)")
 
-	discordToken   = flag.String("discord-token", "", "The bot's Discord token")
-	discordChannel = flag.String("discord-channel", "", "Discord server_name:channel_name")
+	discordToken        = flag.String("discord-token", "", "The bot's Discord token")
+	discordChannel      = flag.String("discord-channel", "", "Discord server_name:channel_name")
+	discordRewriteNames = flag.String("discord-rewrite-names", "", "A comma-delimited list of <name>:<newname> pairs used to rewrite Discord display names.")
 
 	httpPublic = flag.String("http-public", "http://localhost:8888", "The bridge's public base URL")
 	httpServe  = flag.String("http-serve", "localhost:8888", "The bridge's HTTP server host")
@@ -137,6 +138,15 @@ func main() {
 				panic(err)
 			}
 		}()
+
+		for _, rs := range strings.Split(*discordRewriteNames, ",") {
+			r := strings.Split(rs, ":")
+			if len(r) != 2 {
+				panic("invalid discord rewrite name: " + rs)
+			}
+			discordClient.RewriteName(r[0], r[1])
+		}
+
 		discordChan, err := discordClient.Join(ctx, serverChan[0], serverChan[1])
 		if err != nil {
 			panic(err)

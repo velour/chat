@@ -3,10 +3,8 @@ package discord
 import (
 	"context"
 	"io"
-	"log"
 	"strings"
 
-	"github.com/eaburns/pretty"
 	"github.com/velour/chat"
 )
 
@@ -64,7 +62,6 @@ func (ch *Channel) Receive(ctx context.Context) (chat.Event, error) {
 		if !ok {
 			return nil, io.EOF
 		}
-		log.Println("recieved", pretty.String(ev))
 		return ev, nil
 	}
 }
@@ -75,11 +72,11 @@ func (ch *Channel) Send(ctx context.Context, m chat.Message) (chat.Message, erro
 	}{
 		Content: content(ch, &m),
 	}
-	var resp event // Message type
-	if err := ch.cl.post(ctx, "channels/"+ch.id+"/messages", req, &resp); err != nil {
+	var ev event // Message type
+	if err := ch.cl.post(ctx, "channels/"+ch.id+"/messages", req, &ev); err != nil {
 		return chat.Message{}, err
 	}
-	m.ID = eventMessage(ch, &resp).ID
+	m.ID = chat.MessageID(ev.ID)
 	return m, nil
 }
 
@@ -100,15 +97,15 @@ func (ch *Channel) Edit(ctx context.Context, m chat.Message) (chat.Message, erro
 	}{
 		Content: content(ch, &m),
 	}
-	var resp event // Message type
-	err := ch.cl.patch(ctx, "channels/"+ch.id+"/messages/"+string(m.ID), req, &resp)
+	var ev event // Message type
+	err := ch.cl.patch(ctx, "channels/"+ch.id+"/messages/"+string(m.ID), req, &ev)
 	if err != nil {
 		if code, ok := err.(httpErr); ok && code == 404 {
 			return m, nil
 		}
 		return chat.Message{}, err
 	}
-	m.ID = eventMessage(ch, &resp).ID
+	m.ID = chat.MessageID(ev.ID)
 	return m, nil
 }
 
